@@ -355,6 +355,13 @@ class xgc1(object):
                 self.r=rz[:,0]
                 self.z=rz[:,1]
                 self.triobj = Triangulation(self.r,self.z,self.cnct)
+                try:
+                    self.surf_idx=fm.read('surf_idx')
+                except:
+                    print("No surf_idx in xgc.mesh.bp") 
+                else:
+                    self.surf_len=fm.read('surf_len')
+                    self.psi_surf=fm.read('psi_surf')
 
     class f0meshdata(object):    
         """
@@ -514,23 +521,31 @@ class xgc1(object):
         var=f.read(varstr)
         fig, ax=plt.subplots()
 
-        #if(box==None):
-        try:
-            cf=ax.tricontourf(self.mesh.triobj,var[plane,], cmap=cmap,extend='both')
-        except:
-            cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap, extend='both')
-        #else:
-
-        cbar = fig.colorbar(cf)
+        if(box!=None):
+            ax.set_xlim(box[0], box[1])
+            ax.set_ylim(box[2], box[3])
+        if(True):
+            try:
+                cf=ax.tricontourf(self.mesh.triobj,var[plane,], cmap=cmap,extend='both')
+            except:
+                cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap, extend='both')
+            
+            cbar = fig.colorbar(cf)
 
         if(box!=None):
+            ax.set_xlim(box[0], box[1])
+            ax.set_ylim(box[2], box[3])
+
+        #else:
+        if(False):
+        #if(box!=None):
             Rmin=box[0]
             Rmax=box[1]
             Zmin=box[2]
             Zmax=box[3]
 
-            ax.set_xlim(Rmin, Rmax)
-            ax.set_ylim(Zmin, Zmax)
+            #ax.set_xlim(Rmin, Rmax)
+            #ax.set_ylim(Zmin, Zmax)
             """ 
             #color bar change
             new_clim = (0, 100)
@@ -547,16 +562,15 @@ class xgc1(object):
  
             #find subset triobj
             #limit to the user-input ranges
-            idxsub = ( (R>Rmin) & (R<=Rmax) & (Z>=Zmin) & (Z<=Zmax) )
-            rsub=self.r[idx]
-            zsub=self.z[idx]
-
+            idxsub = ( (self.mesh.r>=Rmin) & (self.mesh.r<=Rmax) & (self.mesh.z>=Zmin) & (self.mesh.z<=Zmax) )
+            rsub=self.mesh.r[idxsub]
+            zsub=self.mesh.z[idxsub]
 
 
             #find which triangles are in the defined spatial region
-            tmp=idxsub[tri] #idxsub T/F array, same size as R
-            good_tri=np.all(tmp,axis=1) #only use triangles who have all vertices in idxsub
-            trisub=tri[good_tri,:]
+            tmp=idxsub[self.mesh.cnct] #idxsub T/F array, same size as R
+            goodtri=np.all(tmp,axis=1) #only use triangles who have all vertices in idxsub
+            trisub=self.mesh.cnct[goodtri,:]
             #remap indices in triangulation
             indices=np.where(idxsub)[0]
             for i in range(len(indices)):
@@ -564,7 +578,12 @@ class xgc1(object):
 
             trisubobj = Triangulation(rsub,zsub,trisub)
 
-
+            try:
+                cf=ax.tricontourf(trisubobj,var[plane,idxsub], cmap=cmap,extend='both')
+            except:
+                cf=ax.tricontourf(trisubobj,var[idxsub], cmap=cmap, extend='both')
+            
+            cbar = fig.colorbar(cf)
 
 
         ax.set_title(varstr + " from " + filestr)
