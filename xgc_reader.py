@@ -48,16 +48,26 @@ class xgc1(object):
         except:
             print("psix is not defined - call load_unitsm() to get psix to get psi00n")
         # Temperatures
-        Teperp=self.od.e_perp_temperature_df_1d
-        Tepara=self.od.e_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
-        self.od.Te=(Teperp+Tepara)/3*2
+        try: 
+            Teperp=self.od.e_perp_temperature_df_1d
+        except:
+            print('No electron')
+            self.electron_on=False
+        else:
+            self.electron_on=True
+            Tepara=self.od.e_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
+            self.od.Te=(Teperp+Tepara)/3*2
         Tiperp=self.od.i_perp_temperature_df_1d
         Tipara=self.od.i_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
         self.od.Ti=(Tiperp+Tipara)/3*2
 
         #ExB shear calculation
-        shear=self.od.d_dpsi(self.od.e_poloidal_ExB_flow_1d,self.od.psi_mks)
-        self.od.shear_r=shear * np.sqrt(self.od.e_grad_psi_sqr_1d)  # assuming electron full-f is almost homogeneouse
+        if(self.electron_on):
+            shear=self.od.d_dpsi(self.od.e_poloidal_ExB_flow_1d,self.od.psi_mks)
+            self.od.shear_r=shear * np.sqrt(self.od.e_grad_psi_sqr_1d)  # assuming electron full-f is almost homogeneouse
+        else:
+            shear=self.od.d_dpsi(self.od.i_poloidal_ExB_flow_1d,self.od.psi_mks)
+            self.od.shear_r=shear * np.sqrt(self.od.i_grad_psi_sqr_1d)  # assuming electron full-f is almost homogeneouse
 
         #find tmask
         d=self.od.step[1]-self.od.step[0]
@@ -473,17 +483,17 @@ class xgc1(object):
         #check reading oneddiag?
         
         #get dpsi
-        dpsi=np.zeros_like(self.od.psi)
-        n=dpsi.size
-        dpsi[1:n-1]=0.5*(self.od.psi[2:n]-self.od.psi[0:n-2])
+        pmks=self.od.psi_mks[0,:]
+        dpsi=np.zeros_like(pmks)
+        dpsi[1:-1]=0.5*(pmks[2:]-self.od.psi[0:-2])
         dpsi[0]=dpsi[1]
-        dpsi[n-1]=dpsi[n-2]
+        dpsi[-1]=dpsi[-2]
         self.od.dvdp=self.vol.od/dpsi
         self.od.dpsi=dpsi
         
         nt=self.od.time.size
         ec=1.6E-19  #electron charge
-        dvdpall=np.ones((nt,1)) @ self.od.dvdp.reshape(1,n)
+        dvdpall=self.od.dvdp
         
         #ion flux
         self.od.efluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_en_flux_df_1d * dvdpall
