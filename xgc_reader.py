@@ -34,7 +34,13 @@ class xgc1(object):
         self.unit_file = self.path+'units.m'
         self.unit_dic = self.load_m(self.unit_file) #actual reading routine
         self.psix=self.unit_dic['psi_x']
-
+        self.eq_x_r = self.unit_dic['eq_x_r']
+        self.eq_x_z = self.unit_dic['eq_x_z']
+        self.eq_axis_r = self.unit_dic['eq_axis_r']
+        self.eq_axis_z = self.unit_dic['eq_axis_z']
+        self.sml_dt = self.unit_dic['sml_dt']
+        self.sml_wdge_n = self.unit_dic['sml_wedge_n']
+        self.diag_1d_period = self.unit_dic['diag_1d_period']
 
     def load_oned(self):
         """
@@ -64,10 +70,23 @@ class xgc1(object):
         #ExB shear calculation
         if(self.electron_on):
             shear=self.od.d_dpsi(self.od.e_poloidal_ExB_flow_1d,self.od.psi_mks)
-            self.od.shear_r=shear * np.sqrt(self.od.e_grad_psi_sqr_1d)  # assuming electron full-f is almost homogeneouse
+            self.od.grad_psi_sqr = self.od.e_grad_psi_sqr_1d
         else:
             shear=self.od.d_dpsi(self.od.i_poloidal_ExB_flow_1d,self.od.psi_mks)
-            self.od.shear_r=shear * np.sqrt(self.od.i_grad_psi_sqr_1d)  # assuming electron full-f is almost homogeneouse
+            self.od.grad_psi_sqr = self.od.i_grad_psi_sqr_1d
+        self.od.shear_r=shear * np.sqrt(self.od.grad_psi_sqr)  # assuming electron full-f is almost homogeneouse
+
+        if(self.electron_on):
+            self.od.density = self.od.e_gc_density_df_1d
+        else:
+            self.od.density = self.od.i_gc_density_df_1d
+
+        #gradient scale
+        self.Ln = self.od.density / self.od.d_dpsi(self.od.density, self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
+        self.Lti =self.od.Ti      / self.od.d_dpsi(self.Ti         ,self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
+        if(self.electron_on):
+            self.Lte =self.od.Te      / self.od.d_dpsi(self.Te         ,self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
+            
 
         #find tmask
         d=self.od.step[1]-self.od.step[0]
@@ -83,10 +102,11 @@ class xgc1(object):
             #self.od.tmask[i-st/d]=tmp[-1,-1]   #LFS zero based, RHS last element
             self.od.tmask[i-st]=tmp[-1,-1]   #LFS zero based, RHS last element
 
+    """ 
+        class for reading data file like xgc.oneddiag.bp
+        Trying to be general, but used only for xgc.onedidag.bp
+    """
     class data1(object):
-        """
-        read data type 1 -- like xgc.oneddiag.bp
-        """
         def __init__(self,filename):
             with adios2.open(filename,"r") as self.f:
                 #read file and assign it
@@ -111,10 +131,11 @@ class xgc1(object):
             dvdp[:,-1]=dvdp[:,-2]
             return dvdp
 
+    """
+    class for head load diagnostic output.
+    Only psi space data currently?
+    """
     class datahlp(object):
-        """
-        data for head load (in psi space?)
-        """
         def __init__(self,filename,irg):
             with adios2.open(filename,"r") as self.f:
                 #irg is region number 0,1 - outer, inner
@@ -138,7 +159,11 @@ class xgc1(object):
                 #keep last time step
                 self.r=self.r[-1,:]
                 self.z=self.z[-1,:]
+        
+        """ 
+        get some parameters for plots of heat diag
 
+        """
         def post_heatdiag(self,dt,ds):
             #
             """
@@ -171,7 +196,9 @@ class xgc1(object):
             for i in range(mx.shape[0]):
                 self.lq_int[i]=np.sum(self.qt[i,:]*self.drmid)/mx[i]
 
-
+        """
+        getting total heat (radially integrated) to inner/outer divertor.
+        """
         def total_heat(self,dt,wedge_n):
             qe=wedge_n * (np.sum(self.e_perp_energy_psi,axis=1)+np.sum(self.e_para_energy_psi,axis=1))
             qi=wedge_n * (np.sum(self.i_perp_energy_psi,axis=1)+np.sum(self.i_para_energy_psi,axis=1))
@@ -190,13 +217,17 @@ class xgc1(object):
             #qi2=np.sum(self.i_perp_energy+self.i_para_energy,axis=2)
             #qi2=np.sum(qi2,axis=1)
             #self.qi_tot2=qi2*wedge_n/dt
-            
-        def eich(self,xdata,q0,s,lq,dsep):
-            """
+
+        """
+            Functions for eich fit
             q(x) =0.5*q0* exp( (0.5*s/lq)^2 - (x-dsep)/lq ) * erfc (0.5*s/lq - (x-dsep)/s)
-            """
+        """
+        def eich(self,xdata,q0,s,lq,dsep):
             return 0.5*q0*np.exp((0.5*s/lq)**2-(xdata-dsep)/lq)*erfc(0.5*s/lq-(xdata-dsep)/s)
 
+        """
+            Eich fitting of one profile data
+        """
         def eich_fit1(self,ydata,pmask):
             q0init=np.max(ydata)
             sinit=2 # 2mm
@@ -211,6 +242,9 @@ class xgc1(object):
 
             return popt, pconv
 
+        """
+            perform fitting for all time steps.
+        """
         def eich_fit_all(self,**kwargs):
             # need pmask for generalization?
             pmask = kwargs.get('pmask', None)
@@ -224,11 +258,11 @@ class xgc1(object):
                     popt=[0, 0, 0, 0]
                 
                 self.lq_eich[i]= popt[2]
-                
-    class databfm(object):
-        """
+    
+    """
         data for bfieldm
-        """
+    """
+    class databfm(object):
         def __init__(self):
             with adios2.open("xgc.bfieldm.bp","r") as self.f:
                 self.vars=self.f.available_variables()
@@ -372,6 +406,9 @@ class xgc1(object):
                 else:
                     self.surf_len=fm.read('surf_len')
                     self.psi_surf=fm.read('psi_surf')
+                self.node_vol=f.read('node_vol')
+                self.qsafety=f.read('qsafety')
+
 
     class f0meshdata(object):    
         """
