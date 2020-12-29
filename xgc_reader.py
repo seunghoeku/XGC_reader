@@ -83,9 +83,9 @@ class xgc1(object):
 
         #gradient scale
         self.od.Ln = self.od.density / self.od.d_dpsi(self.od.density, self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
-        self.od.Lti =self.od.Ti      / self.od.d_dpsi(self.Ti         ,self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
+        self.od.Lti =self.od.Ti      / self.od.d_dpsi(self.od.Ti     , self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
         if(self.electron_on):
-            self.od.Lte =self.od.Te      / self.od.d_dpsi(self.Te         ,self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
+            self.od.Lte =self.od.Te  / self.od.d_dpsi(self.od.Te     , self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
             
 
         #find tmask
