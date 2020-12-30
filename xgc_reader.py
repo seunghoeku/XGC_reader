@@ -406,8 +406,8 @@ class xgc1(object):
                 else:
                     self.surf_len=fm.read('surf_len')
                     self.psi_surf=fm.read('psi_surf')
-                self.node_vol=f.read('node_vol')
-                self.qsafety=f.read('qsafety')
+                self.node_vol=fm.read('node_vol')
+                self.qsafety=fm.read('qsafety')
 
 
     class f0meshdata(object):    
