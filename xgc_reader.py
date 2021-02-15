@@ -408,6 +408,7 @@ class xgc1(object):
                     self.psi_surf=fm.read('psi_surf')
                 self.node_vol=fm.read('node_vol')
                 self.qsafety=fm.read('qsafety')
+                self.psi=fm.read('psi')
 
 
     class f0meshdata(object):    
@@ -522,7 +523,7 @@ class xgc1(object):
         #get dpsi
         pmks=self.od.psi_mks[0,:]
         dpsi=np.zeros_like(pmks)
-        dpsi[1:-1]=0.5*(pmks[2:]-self.od.psi[0:-2])
+        dpsi[1:-1]=0.5*(pmks[2:]-pmks[0:-2])
         dpsi[0]=dpsi[1]
         dpsi[-1]=dpsi[-2]
         self.od.dvdp=self.vol.od/dpsi
