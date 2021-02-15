@@ -39,7 +39,7 @@ class xgc1(object):
         self.eq_axis_r = self.unit_dic['eq_axis_r']
         self.eq_axis_z = self.unit_dic['eq_axis_z']
         self.sml_dt = self.unit_dic['sml_dt']
-        self.sml_wdge_n = self.unit_dic['sml_wedge_n']
+        self.sml_wedge_n = self.unit_dic['sml_wedge_n']
         self.diag_1d_period = self.unit_dic['diag_1d_period']
 
     def load_oned(self):
@@ -531,7 +531,7 @@ class xgc1(object):
         
         nt=self.od.time.size
         ec=1.6E-19  #electron charge
-        dvdpall=self.od.dvdp
+        dvdpall=self.od.dvdp * self.sml_wedge_n
         
         #ion flux
         self.od.efluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_en_flux_df_1d * dvdpall
