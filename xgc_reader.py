@@ -347,6 +347,7 @@ class xgc1(object):
         box = kwargs.get('box', None)
         psi = kwargs.get('psi', None)
         xlim = kwargs.get('xlim', None)
+        initial = kwargs.get('initial',True)
         
         if(type(psi).__module__ != np.__name__):  #None or not numpy data
             psi=obj.psi #default psi is obj.psi
@@ -361,11 +362,13 @@ class xgc1(object):
         fig, ax=plt.subplots()
         lbl=["Initial","Final"]
         if(xlim==None):
-            ax.plot(psi,var[0,],label='Initial')
+            if(initial):
+                ax.plot(psi,var[0,],label='Initial')
             ax.plot(psi,var[stc-1,],label='Final')
         else:
             msk=(psi >= xlim[0]) & (psi <= xlim[1])
-            ax.plot(psi[msk],var[0,msk],label='Initial')
+            if(initial):
+                ax.plot(psi[msk],var[0,msk],label='Initial')
             ax.plot(psi[msk],var[stc-1,msk],label='Final')
                 
         ax.legend()
