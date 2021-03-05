@@ -38,6 +38,7 @@ class xgc1(object):
         self.eq_x_z = self.unit_dic['eq_x_z']
         self.eq_axis_r = self.unit_dic['eq_axis_r']
         self.eq_axis_z = self.unit_dic['eq_axis_z']
+        self.eq_axis_b = self.unit_dic['eq_axis_b']
         self.sml_dt = self.unit_dic['sml_dt']
         self.sml_wedge_n = self.unit_dic['sml_wedge_n']
         self.diag_1d_period = self.unit_dic['diag_1d_period']
@@ -642,3 +643,23 @@ class xgc1(object):
         
 
     
+    def fsa_simple(self,var,**kwargs):
+        """
+        simple flux surface average using mesh data
+        self.meshdata should be called before
+
+        var: variable to average 
+        plane: 0 based plane index - ignored for axisymmetric data
+        Improve it to handle box 
+        additional var to add: box, levels, cmap, etc
+        """
+        favg=np.zeros(x.mesh.psi_surf.size)
+        for i in range(0,x.mesh.psi_surf.size):
+            s1=0
+            s2=0
+            for j in range(0,x.mesh.surf_len[i]):
+                idx=x.mesh.surf_idx[i,j] - 1
+                s1=s1+var[idx]*x.mesh.node_vol[i]
+                s2=s2+x.mesh.node_vol[i]
+            favg[i]=s1/s2
+        return favg
