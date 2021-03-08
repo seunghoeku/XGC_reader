@@ -653,13 +653,13 @@ class xgc1(object):
         Improve it to handle box 
         additional var to add: box, levels, cmap, etc
         """
-        favg=np.zeros(x.mesh.psi_surf.size)
-        for i in range(0,x.mesh.psi_surf.size):
+        favg=np.zeros(self.mesh.psi_surf.size)
+        for i in range(0,self.mesh.psi_surf.size):
             s1=0
             s2=0
-            for j in range(0,x.mesh.surf_len[i]):
-                idx=x.mesh.surf_idx[i,j] - 1
-                s1=s1+var[idx]*x.mesh.node_vol[i]
-                s2=s2+x.mesh.node_vol[i]
+            for j in range(0,self.mesh.surf_len[i]):
+                idx=self.mesh.surf_idx[i,j] - 1
+                s1=s1+var[idx]*self.mesh.node_vol[i]
+                s2=s2+self.mesh.node_vol[i]
             favg[i]=s1/s2
         return favg
