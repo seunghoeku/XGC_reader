@@ -663,3 +663,13 @@ class xgc1(object):
                 s2=s2+self.mesh.node_vol[i]
             favg[i]=s1/s2
         return favg
+
+    def print_plasma_info(self):
+        # print some plasma information (mostly from unit_dic)
+        print("magnetic axis (R,Z) = (%5.5f, %5.5f) m\n" % (self.eq_axis_r, self.eq_axis_z))
+        print("magnetic field at axis = %5.5f T\n",self.eq_axis_b)
+        print("X-point (R,Z) = (%5.5f, %5.5f)\n" % (self.eq_x_r, self.eq_x_z))
+        print("simulation delta t = %e s\n" % self.sml_dt
+        print("wedge number = %d\n" % self.sml_wedge_n)
+        print("Ion mass = %d\n" % self.unit_dic['ptl_ion_mass_au'])
+        print("particle number = %e\n" % self.unit_dic['sml_totalpe']* self.unit_dic['ptl_num'])
