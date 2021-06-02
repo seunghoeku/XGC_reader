@@ -422,11 +422,15 @@ class xgc1(object):
         def __init__(self):
             with adios2.open("xgc.f0.mesh.bp","r") as f:
                 T_ev=f.read('f0_T_ev')
-
+                den0=f.read('f0_den')
+                flow=f.read('f0_flow')
+                self.ni0=den0[-1,:]
                 self.ti0=T_ev[-1,:]  # last species. need update for multi ion
+                self.ui0=flow[-1,:]
                 if(T_ev.shape[0]>=2):
                     self.te0=T_ev[0,:]
-                self.den0=f.read('f0_den')
+                    self.ne0=den0[0,:]
+                    self.ue0=flow[0,:]
                 self.dsmu=f.read('f0_dsmu')
                 self.dvp =f.read('f0_dvp')
                 self.smu_max=f.read('f0_smu_max')
