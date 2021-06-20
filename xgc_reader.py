@@ -322,6 +322,7 @@ class xgc1(object):
         #get dpdr (normalized psi) at separatrix
         self.bfm.dpndrs = (self.bfm.psino[n0]-self.bfm.psino[n0-1])/(self.bfm.rmido[n0]-self.bfm.rmido[n0-1])
 
+        self.bfm.rminor= self.bfm.rmido - self.bfm.r0
 
                 
     def load_m(self,fname):
@@ -424,6 +425,8 @@ class xgc1(object):
                 T_ev=f.read('f0_T_ev')
                 den0=f.read('f0_den')
                 flow=f.read('f0_flow')
+                if(flow.size==0):
+                    flow=np.zeros_like(den0) #zero flow when flow is not written
                 self.ni0=den0[-1,:]
                 self.ti0=T_ev[-1,:]  # last species. need update for multi ion
                 self.ui0=flow[-1,:]
@@ -678,3 +681,6 @@ class xgc1(object):
         print("Ion mass = %d" % self.unit_dic['ptl_ion_mass_au'])
         print("particle number = %e" % (self.unit_dic['sml_totalpe']* self.unit_dic['ptl_num']))
     
+    def midplane(self):
+        #convert 1d psi coord to r
+        self.od.r = np.interp(self.od.psi, self.bfm.psin, self.bfm.rminor)
