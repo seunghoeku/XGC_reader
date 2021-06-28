@@ -184,6 +184,7 @@ class xgc1(object):
             dt[0] = dt[1]
             rst=np.nonzero(dt<0)  #index when restat happen
             dt[rst]=dt[rst[0]+1]
+            self.dt = dt
 
             #get separatrix r
             self.rs=np.interp([1],self.psin,self.rmid)
@@ -191,10 +192,16 @@ class xgc1(object):
             self.rmidsepmm=(self.rmid-self.rs)*1E3  # dist from sep in mm
 
             #get heat
-            self.qe=(self.e_perp_energy_psi + self.e_para_energy_psi)/dt/ds
-            self.qi=(self.i_perp_energy_psi + self.i_para_energy_psi)/dt/ds
-            self.ge=self.e_number_psi/dt/ds
-            self.gi=self.i_number_psi/dt/ds
+            self.qe=np.transpose(self.e_perp_energy_psi + self.e_para_energy_psi)/dt/ds
+            self.qi=np.transpose(self.i_perp_energy_psi + self.i_para_energy_psi)/dt/ds
+            self.ge=np.transpose(self.e_number_psi)/dt/ds
+            self.gi=np.transpose(self.i_number_psi)/dt/ds
+
+            self.qe = np.transpose(self.qe)
+            self.qi = np.transpose(self.qi)
+            self.ge = np.transpose(self.ge)
+            self.gi = np.transpose(self.gi)
+
             self.qt=self.qe+self.qi
             #imx=self.qt.argmax(axis=1)
             mx=np.amax(self.qt,axis=1)
@@ -206,7 +213,7 @@ class xgc1(object):
         """
         getting total heat (radially integrated) to inner/outer divertor.
         """
-        def total_heat(self,dt,wedge_n):
+        def total_heat(self,wedge_n):
             qe=wedge_n * (np.sum(self.e_perp_energy_psi,axis=1)+np.sum(self.e_para_energy_psi,axis=1))
             qi=wedge_n * (np.sum(self.i_perp_energy_psi,axis=1)+np.sum(self.i_para_energy_psi,axis=1))
 
@@ -214,8 +221,8 @@ class xgc1(object):
 
             # find dt in varying sml_dt after restart
 
-            self.qe_tot=qe/dt
-            self.qi_tot=qi/dt
+            self.qe_tot=qe/self.dt
+            self.qi_tot=qi/self.dt
             
             #compare 2D data 
             #qe2=np.sum(self.e_perp_energy+self.e_para_energy,axis=2)
@@ -308,7 +315,7 @@ class xgc1(object):
             ds=dpsin/self.bfm.dpndrs* 2 * 3.141592 * self.bfm.r0 /wedge_n  #R0 at axis is used. should I use Rs?
             self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
             self.hl[i].post_heatdiag(ds)
-            self.hl[i].total_heat(dt,wedge_n)
+            self.hl[i].total_heat(wedge_n)
 
     def load_bfieldm(self):
         self.bfm = self.databfm()
