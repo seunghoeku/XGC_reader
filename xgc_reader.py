@@ -183,7 +183,7 @@ class xgc1(object):
             dt[1:] = self.time[1:] - self.time[0:-1]
             dt[0] = dt[1]
             rst=np.nonzero(dt<0)  #index when restat happen
-            dt[rst]=dt[rst+1]
+            dt[rst]=dt[rst[0]+1]
 
             #get separatrix r
             self.rs=np.interp([1],self.psin,self.rmid)
