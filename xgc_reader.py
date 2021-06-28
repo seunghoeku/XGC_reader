@@ -165,7 +165,7 @@ class xgc1(object):
         get some parameters for plots of heat diag
 
         """
-        def post_heatdiag(self,dt,ds):
+        def post_heatdiag(self,ds):
             #
             """
                 self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
@@ -178,6 +178,12 @@ class xgc1(object):
             self.drmid[1:-1]=(self.rmid[2:]-self.rmid[0:-2])*0.5
             self.drmid[0]=self.drmid[1]
             self.drmid[-1]=self.drmid[-2]
+
+            dt = np.zeros_like(self.time)
+            dt[1:] = self.time[1:] - self.time[0:-1]
+            dt[0] = dt[1]
+            rst=np.nonzero(dt<0)  #index when restat happen
+            dt[rst]=dt[rst+1]
 
             #get separatrix r
             self.rs=np.interp([1],self.psin,self.rmid)
@@ -294,14 +300,14 @@ class xgc1(object):
         #read bfieldm data if available
         self.load_bfieldm()
 
-        dt=self.unit_dic['sml_dt']*self.unit_dic['diag_1d_period']
+        #dt=self.unit_dic['sml_dt']*self.unit_dic['diag_1d_period']
         wedge_n=self.unit_dic['sml_wedge_n']
         for i in [0,1]:
             dpsin=self.hl[i].psin[1]-self.hl[i].psin[0]  #equal dist
             #ds = dR* 2 * pi * R / wedge_n
             ds=dpsin/self.bfm.dpndrs* 2 * 3.141592 * self.bfm.r0 /wedge_n  #R0 at axis is used. should I use Rs?
             self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
-            self.hl[i].post_heatdiag(dt,ds)
+            self.hl[i].post_heatdiag(ds)
             self.hl[i].total_heat(dt,wedge_n)
 
     def load_bfieldm(self):
