@@ -257,13 +257,31 @@ class xgc1(object):
             return popt, pconv
 
         """
+            Smoothing qt before Eich fit
+        """
+        def qt_smoothing(self,width,order):
+            from scipy.signal import savgol_filter
+
+            for i in range(self.time.size):
+                tmp = self.qt[i,:]
+                self.qt[i,:]=  savgol_filter(tmp,width,order)
+
+        """
+            Reset qt from qi and qe
+        """
+        def qt_reset(self):
+            self.qt=self.qe+self.qi
+
+        """
             perform fitting for all time steps.
         """
         def eich_fit_all(self,**kwargs):
             # need pmask for generalization?
             pmask = kwargs.get('pmask', None)
 
-            self.lq_eich=self.lq_int*0 #mem allocation
+            self.lq_eich=np.zeros_like(self.lq_int) #mem allocation
+            self.S_eich=np.zeros_like(self.lq_eich)
+            self.dsep_eich=np.zeros_like(self.lq_eich)
 
             for i in range(self.time.size):
                 try :
@@ -272,7 +290,8 @@ class xgc1(object):
                     popt=[0, 0, 0, 0]
                 
                 self.lq_eich[i]= popt[2]
-    
+                self.S_eich[i] = popt[1]
+                self.dsep_eich[i]= popt[3]
     """
         data for bfieldm
     """
