@@ -137,7 +137,7 @@ class xgc1(object):
     Only psi space data currently?
     """
     class datahlp(object):
-        def __init__(self,filename,irg):
+        def __init__(self,filename,irg, read_rz):
             with adios2.open(filename,"r") as self.f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
@@ -153,7 +153,7 @@ class xgc1(object):
                             setattr(self,v,self.f.read(v,start=[0], count=c, step_start=0, step_count=stc))
                         elif len(c)==2 : # c[0] is irg
                             setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0], count=[1,c[1]], step_start=0, step_count=stc)))
-                        elif len(c)==3 : # ct[0] is irg, read only 
+                        elif ( len(c)==3 & read_rz ) : # ct[0] is irg, read only 
                             setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
                     elif v!='zsamples' and v!='rsamples':
                         setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
@@ -309,13 +309,15 @@ class xgc1(object):
                 self.psin=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
 
 
-    def load_heatdiag(self):
+    def load_heatdiag(self, **kwargs):
         """
         load xgc.heatdiag.bp and some post process
         """
+        read_rz = kwargs.get('read_rz',True) #read heat load in RZ
+
         self.hl=[]
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",0) ) #actual reading routine
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",1) )#actual reading routine
+        self.hl.append( self.datahlp("xgc.heatdiag.bp",0,read_rz) ) #actual reading routine
+        self.hl.append( self.datahlp("xgc.heatdiag.bp",1,read_rz) )#actual reading routine
 
         for i in [0,1] :
             try:
