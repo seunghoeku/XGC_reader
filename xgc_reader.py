@@ -337,7 +337,9 @@ class xgc1(object):
             self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
             self.hl[i].post_heatdiag(ds)
             self.hl[i].total_heat(wedge_n)
-
+    """
+        Load xgc.bfieldm.bp -- midplane bfield info
+    """
     def load_bfieldm(self):
         self.bfm = self.databfm()
         self.bfm.r0=self.unit_dic['eq_axis_r']
@@ -358,10 +360,16 @@ class xgc1(object):
 
         self.bfm.rminor= self.bfm.rmido - self.bfm.r0
 
-                
+    """
+        Load xgc.bfield.bp -- equilibrium bfield 
+    """
+    #def load_bfield  -- not yet.
+    
+
+    """
+        load the whole  .m file and return a dictionary contains all the entries.
+    """     
     def load_m(self,fname):
-        """load the whole  .m file and return a dictionary contains all the entries.
-        """
         f = open(fname,'r')
         result = {}
         for line in f:
@@ -445,9 +453,14 @@ class xgc1(object):
                 else:
                     self.surf_len=fm.read('surf_len')
                     self.psi_surf=fm.read('psi_surf')
+                    self.theta=fm.read('theta')
                 self.node_vol=fm.read('node_vol')
+                self.node_vol_nearest=fm.read('node_vol_nearest')
                 self.qsafety=fm.read('qsafety')
                 self.psi=fm.read('psi')
+                self.epsilon=fm.read('epsilon')
+                self.rmin=fm.read('rmin')
+                self.rmaj=fm.read('rmaj')
 
 
     class f0meshdata(object):    
