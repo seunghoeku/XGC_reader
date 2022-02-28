@@ -321,7 +321,7 @@ class xgc1(object):
 
         for i in [0,1] :
             try:
-                self.hl[i].psin=self.hl[i].psi[0,:]/self.psix #Normalize 0 - 1(Separatrix)
+                self.hl[i].psin=self.hl[i].psi[-1,:]/self.psix #Normalize 0 - 1(Separatrix)
             except:
                 print("psix is not defined - call load_unitsm() to get psix to get psin")
 
@@ -731,3 +731,78 @@ class xgc1(object):
     def midplane(self):
         #convert 1d psi coord to r
         self.od.r = np.interp(self.od.psi, self.bfm.psin, self.bfm.rminor)
+
+    '''
+    find time index mask to get continuous time stepping (discontinuity from restart)
+    '''
+    def find_tmask(self, step, max_end=False):
+        if(max_end): #determin end point
+            ed = np.max(step) # maximum time step
+        else:
+            ed = step[-1]   #ending time step
+
+        tmask_rev=[]
+        p=step.size
+        for i in range(ed,0,-1):  #reverse order
+            m=np.nonzero(step[0:p]==i) #find index that has step i
+            try :
+                p = m[0][-1] # exclude zero size 
+            except:
+                pass
+            else:
+                tmask_rev.append(p) # only append that has step number
+        #tmaks is reverse order
+        tmask=tmask_rev[::-1]
+        return tmask
+
+
+    """
+    contourf plot of a poloidal plane -- incomplete -- change name?
+    """
+    def contour(self,filename, varname, **kwargs):
+        
+        plane=0
+        Rmin=2.2; Rmax=2.3; Zmin=-0.2; Zmax=0.2
+        vm=150
+
+
+        #read data
+        f=adios2.open(filename,'r')
+        var=f.read(varname)
+        f.close()
+
+        #pick a plane
+        # if n=0 mode, use var
+        # if index is switched, transpose
+        
+        # if no_n0 is true --> remove n=0 mode
+
+        var0=var[plane,]#-np.mean(var,axis=0)
+
+
+        #whole
+        fig, ax=plt.subplots()
+        '''
+        cf=ax.tricontourf(x.mesh.triobj,var0, cmap='jet',extend='both',levels=150,vmin=-vm,vmax=vm)
+        cbar = fig.colorbar(cf)
+        plt.title('Perturbed Phi (V)')
+        ax.scatter(x.mesh.r[idx],x.mesh.z[idx],s=0.05, facecolor='black', edgecolor='none')
+        '''
+
+
+'''
+def load_prf(filename):
+    import pandas as pd
+    #space separated file 
+    df = pd.read_csv(filename, sep = r'\s{2,}',engine='python')
+    psi = df.index.values
+    psi = psi[0:-1]
+    var = df.values
+    var = var[0:-1]
+    return(psi,var)
+
+# read background profile
+psi_t, var_t=load_prf('../XGC-1_inputs/temp_cbc_w_0.15.prf')
+var_t = var_t[:,0]
+x.od.temp0 = np.interp(x.od.psi, psi_t, var_t)
+'''
