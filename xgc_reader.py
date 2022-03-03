@@ -137,7 +137,7 @@ class xgc1(object):
     Only psi space data currently?
     """
     class datahlp(object):
-        def __init__(self,filename,irg, read_rz):
+        def __init__(self,filename,irg, read_rz_all=False):
             with adios2.open(filename,"r") as self.f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
@@ -153,8 +153,10 @@ class xgc1(object):
                             setattr(self,v,self.f.read(v,start=[0], count=c, step_start=0, step_count=stc))
                         elif len(c)==2 : # c[0] is irg
                             setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0], count=[1,c[1]], step_start=0, step_count=stc)))
-                        elif ( len(c)==3 & read_rz ) : # ct[0] is irg, read only 
+                        elif ( len(c)==3 & read_rz_all ) : # ct[0] is irg, read only 
                             setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
+                        elif ( len(c)==3 ) : # read_rz_all is false. ct[0] is irg, read only 
+                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc, step_count=1)))
                     elif v!='zsamples' and v!='rsamples':
                         setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
                 #keep last time step
@@ -313,11 +315,11 @@ class xgc1(object):
         """
         load xgc.heatdiag.bp and some post process
         """
-        read_rz = kwargs.get('read_rz',True) #read heat load in RZ
+        read_rz_all = kwargs.get('read_rz_all',False) #read heat load in RZ
 
         self.hl=[]
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",0,read_rz) ) #actual reading routine
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",1,read_rz) )#actual reading routine
+        self.hl.append( self.datahlp("xgc.heatdiag.bp",0,read_rz_all) ) #actual reading routine
+        self.hl.append( self.datahlp("xgc.heatdiag.bp",1,read_rz_all) )#actual reading routine
 
         for i in [0,1] :
             try:
@@ -788,6 +790,47 @@ class xgc1(object):
         plt.title('Perturbed Phi (V)')
         ax.scatter(x.mesh.r[idx],x.mesh.z[idx],s=0.05, facecolor='black', edgecolor='none')
         '''
+    
+    #Function for adios reading
+    def adios2_get_shape(self, f, varname):
+        nstep = int(f.available_variables()[varname]['AvailableStepsCount'])
+        shape = f.available_variables()[varname]['Shape']
+        lshape = None
+        if shape == '':
+            ## Accessing Adios1 file
+            ## Read data and figure out
+            v = f.read(varname)
+            lshape = v.shape
+        else:
+            lshape = tuple([ int(x.strip(',')) for x in shape.strip().split() ])
+        return (nstep, lshape)
+
+    def adios2_read_all_time(self, f, varname):
+        nstep, nsize = self.adios2_get_shape(f,varname)
+        
+        # how can generalize start??
+        if(nsize.ndim==1):
+            np.squeeze(f.read(varname, start=(0), count=nsize, step_start=0, step_count=nstep))
+        elif(nsize.ndim==2):
+            np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=0, step_count=nstep))
+        elif(nsize.ndim==3):
+            np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=0, step_count=nstep))
+
+
+    def adios2_read_one_time(self, f, varname, step=-1):
+        nstep, nsize = self.adios2_get_shape(f,varname)
+        
+        if(step==-1):
+            step=nstep-1 # use last step
+            
+        # how can generalize start??
+        if(nsize.ndim==1):
+            np.squeeze(f.read(varname, start=(0), count=nsize, step_start=step, step_count=1))
+        elif(nsize.ndim==2):
+            np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
+        elif(nsize.ndim==3):
+            np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
+
 
 
 '''
