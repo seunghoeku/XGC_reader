@@ -156,7 +156,7 @@ class xgc1(object):
                         elif ( len(c)==3 & read_rz_all ) : # ct[0] is irg, read only 
                             setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
                         elif ( len(c)==3 ) : # read_rz_all is false. ct[0] is irg, read only 
-                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc, step_count=1)))
+                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc-1, step_count=1)))
                     elif v!='zsamples' and v!='rsamples':
                         setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
                 #keep last time step
