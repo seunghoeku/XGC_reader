@@ -810,11 +810,11 @@ class xgc1(object):
         
         # how can generalize start??
         if(len(nsize)==1):
-            np.squeeze(f.read(varname, start=(0), count=nsize, step_start=0, step_count=nstep))
+            return np.squeeze(f.read(varname, start=(0), count=nsize, step_start=0, step_count=nstep))
         elif(len(nsize)==2):
-            np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=0, step_count=nstep))
+            return np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=0, step_count=nstep))
         elif(len(nsize)==3):
-            np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=0, step_count=nstep))
+            return np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=0, step_count=nstep))
 
 
     def adios2_read_one_time(self, f, varname, step=-1):
@@ -832,11 +832,11 @@ class xgc1(object):
 
         # how can generalize start??
         if(len(nsize)==1):
-            np.squeeze(f1.read(varname, start=(0), count=nsize, step_start=step, step_count=1))
+            return np.squeeze(f1.read(varname, start=(0), count=nsize, step_start=step, step_count=1))
         elif(len(nsize)==2):
-            np.squeeze(f1.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
+            return np.squeeze(f1.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
         elif(len(nsize)==3):
-            np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
+            return np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
 
 
 
