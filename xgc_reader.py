@@ -802,34 +802,41 @@ class xgc1(object):
             v = f.read(varname)
             lshape = v.shape
         else:
-            lshape = tuple([ int(x.strip(',')) for x in shape.strip().split() ])
+            lshape = tuple([ int(xx.strip(',')) for xx in shape.strip().split() ])
         return (nstep, lshape)
 
     def adios2_read_all_time(self, f, varname):
         nstep, nsize = self.adios2_get_shape(f,varname)
         
         # how can generalize start??
-        if(nsize.ndim==1):
+        if(len(nsize)==1):
             np.squeeze(f.read(varname, start=(0), count=nsize, step_start=0, step_count=nstep))
-        elif(nsize.ndim==2):
+        elif(len(nsize)==2):
             np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=0, step_count=nstep))
-        elif(nsize.ndim==3):
+        elif(len(nsize)==3):
             np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=0, step_count=nstep))
 
 
     def adios2_read_one_time(self, f, varname, step=-1):
-        nstep, nsize = self.adios2_get_shape(f,varname)
         
         if(step==-1):
             step=nstep-1 # use last step
-            
+
+        idx=0 #initialize    
+        for f1 in f:
+            if(idx==step):
+                break
+            idx=idx+1
+
+        nstep, nsize = self.adios2_get_shape(f1,varname)
+
         # how can generalize start??
-        if(nsize.ndim==1):
-            np.squeeze(f.read(varname, start=(0), count=nsize, step_start=step, step_count=1))
-        elif(nsize.ndim==2):
-            np.squeeze(f.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
-        elif(nsize.ndim==3):
-            np.squeeze(f.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
+        if(len(nsize)==1):
+            np.squeeze(f1.read(varname, start=(0), count=nsize, step_start=step, step_count=1))
+        elif(len(nsize)==2):
+            np.squeeze(f1.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
+        elif(len(nsize)==3):
+            np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
 
 
 
