@@ -431,6 +431,12 @@ class xgc1(object):
     def setup_mesh(self):
         self.mesh=self.meshdata()
 
+        #setup separatrix
+        self.mesh.isep = np.argmin(abs(self.mesh.psi_surf-self.psix))
+        isep=self.mesh.isep
+        length=self.mesh.surf_len[isep]
+        self.mesh.msep = self.mesh.surf_idx[isep,0:length]-1 # zero based
+
     """
     setup f0mesh
     """ 
@@ -838,7 +844,158 @@ class xgc1(object):
         elif(len(nsize)==3):
             return np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
 
+    '''
+    Plot one variable of 3D data in axes
 
+    '''
+    def plot_one_var(self, fig, ax, var, title, vm='None'):
+        if(vm=='None'):
+            var2=var
+            cf=ax.tricontourf(x.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+        else:
+            sigma = np.sqrt(np.mean(var*var) - np.mean(var2)**2)
+            vm = 3 * sigma
+            var2=np.minimum(vm,np.maximum(-vm,var))
+            cf=ax.tricontourf(x.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+
+        cbar = fig.colorbar(cf, ax=ax)
+        ax.set_title(title)
+
+    ''' 
+    functions for k-w power spectrum
+    '''
+    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half):
+        #find line segment
+        ms, psi0, length = self.find_line_segment(self,ns_half, psi_target)
+        #get total distance of the line segment
+        dist=np.sum(np.sqrt( (self.mesh.r[ms[0:-1]]-self.mesh.r[ms[1:]])**2 + (self.mesh.z[ms[0:-1]]-self.mesh.z[ms[1:]])**2 ))
+
+        print('psi0=',psi0,'length=',length)
+        print('getting ExB velocity...')
+        #get exb
+        v_exb = self.find_exb_velocity(istart, iend, skip_exb, ms)
+        print('v_exb=',v_exb,' m/s')
+        #reading data
+        print('reading 3d data...')
+        dpot4,po,time = self.reading_3d_data(istart, iend, skip, ms)
+
+        #prepare parameters for plot
+        k, omega = self.prepare_plots(dist,ms,time)
+        print('done.')
+
+        return ms, psi0, v_exb, dpot4, po, k, omega, time
+
+    
+    # Find line segment of midplane with psi=psi_target or nearest flux surface
+    # Works inside separatrix, but not separatrix or SOL
+    def find_line_segment(self, n, psi_target):
+        tmp=np.where(self.mesh.psi_surf/self.psix>psi_target)
+        isurf=tmp[0][0]
+        #plt.plot(psi_surf)
+        msk=self.mesh.surf_idx[isurf,0:self.mesh.surf_len[isurf]] -1 #node index of the surface, -1 for zero base
+        #plt.plot(self.mesh.r[msk],self.mesh.z[msk])
+        tmp1=msk[-n:]
+        tmp2=msk[0:n]
+        ms=np.append(tmp1,tmp2)
+        ax=plt.subplot()
+        ax.plot(self.mesh.r[ms],self.mesh.z[ms])
+        ax.axis('equal')
+        psi0=self.mesh.psi_surf[isurf]/self.psix
+
+        dr=self.mesh.r[ms[1:]]-self.mesh.r[ms[0:-1]]
+        dz=self.mesh.z[ms[1:]]-self.mesh.z[ms[0:-1]]
+        ds=np.sqrt( (dr)**2 + (dz)**2 )
+        length=np.sum(ds)
+
+        return ms, psi0, length
+
+
+    '''
+    find average ExB velocity of line segment defined with node index ms
+    It reads xgc.f3d.*.bp from index (istart, iend, skip)
+    and do time average.
+    '''
+    def find_exb_velocity(self, istart, iend, skip, ms):
+        pol_vi = 0
+        pol_ve  = 0
+        ct= 0
+        for i in range(istart,iend, skip):
+            f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'r')
+            i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
+            e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
+            f.close()
+
+            pol_vi = pol_vi + np.mean(i_pol_n0_f0[ms])
+            pol_ve = pol_ve + np.mean(e_pol_n0_f0[ms])
+
+            ct = ct + 1
+            #print(i)
+        pol_vi = pol_vi/ct
+        pol_ve = pol_ve/ct
+        v_exb = (pol_vi + pol_ve)/2
+        print('pol_vi=', pol_vi, 'pol_ve=', pol_ve)
+        return v_exb
+
+    '''
+    Reading 3D dpot data of time index (istart, iend, skip) and
+    node index ms
+    FFT to get power spectrum.
+    returns dpot in time-theta index, power spectrum in k-w, and time value
+    '''
+    def reading_3d_data(self,istart, iend, skip, ms):
+        ns=np.size(ms)
+        nt=int( (iend-istart)/skip ) +1
+
+        #get nphi
+        i=istart
+        f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+        dpot=f.read('dpot')
+        f.close()
+        nphi=np.shape(dpot)[0]
+
+        dpot4=np.zeros((nphi,nt,ns))
+        time=np.zeros(nt)
+        for i in range(istart,iend+skip,skip):
+            f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+            it=int( (i-istart)/skip )
+            dpot=f.read('dpot')
+            time1=f.read('time')
+            f.close()
+            dpot2=dpot-np.mean(dpot,axis=0)
+            dpot3=dpot2[:,ms]
+            #print(nt,it)
+            dpot4[:,it,:] = dpot3
+            time[it]=time1
+            #print(it)
+
+        #fft and average
+        for iphi in range(0,nphi-1):
+            fc=np.fft.fft2(dpot4[iphi,:,:])
+            fc=np.fft.fftshift(fc)
+            if(iphi==0):
+                po=np.abs(fc)
+            else:
+                po=po+np.abs(fc)
+
+        return dpot4[0,:,:], po, time
+
+    '''
+    get k and omega 
+    dist is total distance of line sement. Assume the spacings are even in k_theta evaluation
+    time is time in sec, and assumed even spacing.
+    '''
+    def prepare_plots(self,dist,ms,time):
+        ns=np.size(ms)
+        nt=np.size(time)
+
+        kmax=2*np.pi/dist*ns
+        omax=2*np.pi/(time[-1]-time[0])*nt
+
+        k = np.fft.fftshift(np.fft.fftfreq(ns,1/kmax))
+        omega=np.fft.fftshift(np.fft.fftfreq(nt,1/omax))
+
+        return k, omega
+        
 
 '''
 def load_prf(filename):
