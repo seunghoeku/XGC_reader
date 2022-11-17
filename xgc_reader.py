@@ -64,6 +64,20 @@ class xgc1(object):
             self.electron_on=True
             Tepara=self.od.e_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
             self.od.Te=(Teperp+Tepara)/3*2
+        
+        #minority or impurity tempearture
+        try: 
+            Ti2perp=self.od.i2perp_temperature_df_1d
+        except:
+            print('No Impurity')
+            self.ion2_on=False
+        else:
+            self.ion2_on=True
+            Ti2para=self.od.i2parallel_mean_en_df_1d  #parallel flow ignored, correct it later
+            self.od.Ti2=(Ti2perp+Ti2para)/3*2
+
+
+
         Tiperp=self.od.i_perp_temperature_df_1d
         Tipara=self.od.i_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
         self.od.Ti=(Tiperp+Tipara)/3*2
@@ -121,7 +135,7 @@ class xgc1(object):
                         ct=int(ct)
                         setattr(self,v,self.f.read(v,start=[0], count=[ct], step_start=0, step_count=stc))
                     elif v!='gsamples' and v!='samples' :
-                        setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar                       
+                        setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
         def d_dpsi(self,var,psi):
             """
             radial derivative using psi_mks.
@@ -204,7 +218,16 @@ class xgc1(object):
             self.ge = np.transpose(self.ge)
             self.gi = np.transpose(self.gi)
 
+            if(self.ion2_on):
+                self.qi2=np.transpose(self.i2perp_energy_psi + self.i2para_energy_psi)/dt/ds
+                self.gi2=np.transpose(self.i2number_psi)/dt/ds
+                self.qi2 = np.transpose(self.qi2)
+                self.gi2 = np.transpose(self.gi2)
+
             self.qt=self.qe+self.qi
+            if(self.ion2_on):
+                self.qt=self.qt+self.qi2
+
             #imx=self.qt.argmax(axis=1)
             mx=np.amax(self.qt,axis=1)
             self.lq_int=mx*0 #mem allocation
@@ -218,6 +241,8 @@ class xgc1(object):
         def total_heat(self,wedge_n):
             qe=wedge_n * (np.sum(self.e_perp_energy_psi,axis=1)+np.sum(self.e_para_energy_psi,axis=1))
             qi=wedge_n * (np.sum(self.i_perp_energy_psi,axis=1)+np.sum(self.i_para_energy_psi,axis=1))
+            if(self.ion2_on):
+                qi2=wedge_n * (np.sum(self.i2perp_energy_psi,axis=1)+np.sum(self.i2para_energy_psi,axis=1))
 
             #find restart point and remove -- 
 
@@ -225,7 +250,8 @@ class xgc1(object):
 
             self.qe_tot=qe/self.dt
             self.qi_tot=qi/self.dt
-            
+            self.qi2tot=qi2/self.dt
+
             #compare 2D data 
             #qe2=np.sum(self.e_perp_energy+self.e_para_energy,axis=2)
             #qe2=np.sum(qe2,axis=1)
@@ -273,6 +299,8 @@ class xgc1(object):
         """
         def qt_reset(self):
             self.qt=self.qe+self.qi
+            if(self.ion2_on):
+                self.qt=self.qt+self.qi2
 
         """
             perform fitting for all time steps.
@@ -320,6 +348,20 @@ class xgc1(object):
         self.hl=[]
         self.hl.append( self.datahlp("xgc.heatdiag.bp",0,read_rz_all) ) #actual reading routine
         self.hl.append( self.datahlp("xgc.heatdiag.bp",1,read_rz_all) )#actual reading routine
+
+        for i in [0,1] :
+            try: 
+                self.hl[i].e_perp_energy_psi
+                self.hl[i].electron_on=True
+            except: 
+                self.hl[i].electron_on=False
+
+            try: 
+                self.hl[i].i2perp_energy_psi
+                self.hl[i].ion2_on=True
+            except: 
+                self.hl[i].ion2_on=False
+
 
         for i in [0,1] :
             try:
@@ -607,14 +649,22 @@ class xgc1(object):
         self.od.pfluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_flux_df_1d * dvdpall
         self.od.pfluxexbi = self.od.i_gc_density_df_1d * self.od.i_radial_flux_ExB_df_1d * dvdpall
         
-        
-        self.od.efluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_df_1d * dvdpall
-        self.od.efluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_ExB_df_1d * dvdpall
-        self.od.cfluxe    = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_df_1d * dvdpall
-        self.od.cfluxexbe = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_ExB_df_1d * dvdpall
-        self.od.pfluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_flux_df_1d * dvdpall
-        self.od.pfluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_flux_ExB_df_1d * dvdpall
-        
+        if(self.electron_on):
+            self.od.efluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_df_1d * dvdpall
+            self.od.efluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_ExB_df_1d * dvdpall
+            self.od.cfluxe    = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_df_1d * dvdpall
+            self.od.cfluxexbe = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_ExB_df_1d * dvdpall
+            self.od.pfluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_flux_df_1d * dvdpall
+            self.od.pfluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_flux_ExB_df_1d * dvdpall
+
+        if(self.ion2_on):
+            self.od.efluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_en_flux_df_1d * dvdpall
+            self.od.efluxexbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_en_flux_ExB_df_1d * dvdpall
+            self.od.cfluxi2    = self.od.i2gc_density_df_1d * self.od.Ti2 * ec * self.od.i2radial_flux_df_1d * dvdpall
+            self.od.cfluxexbi2 = self.od.i2gc_density_df_1d * self.od.Ti2 * ec * self.od.i2radial_flux_ExB_df_1d * dvdpall
+            self.od.pfluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_flux_df_1d * dvdpall
+            self.od.pfluxexbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_flux_ExB_df_1d * dvdpall
+                
 
 
     def plot2d(self,filestr,varstr,**kwargs):
@@ -996,6 +1046,11 @@ class xgc1(object):
 
         return k, omega
         
+    def find_sep_idx(self):
+        isep = np.argmin(abs(self.mesh.psi_surf-self.psix))
+        length=self.mesh.surf_len[isep]
+        msep = self.mesh.surf_idx[isep,0:length]-1
+        return msep
 
 '''
 def load_prf(filename):
