@@ -847,7 +847,23 @@ class xgc1(object):
         plt.title('Perturbed Phi (V)')
         ax.scatter(x.mesh.r[idx],x.mesh.z[idx],s=0.05, facecolor='black', edgecolor='none')
         '''
-    
+
+    # contour plot of one plane quantity
+    def contourf_one_var(self, var, fig, ax, title='None', vm='None'):
+        if(vm=='None'):
+            cf=ax.tricontourf(self.mesh.triobj,var, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+        elif(vm=='Sigma2'):
+            sigma = np.sqrt(np.mean(var*var) - np.mean(var)**2)
+            vm = 2 * sigma
+            var2=np.minimum(vm,np.maximum(-vm,var))
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150,vmin=-vm, vmax=vm)
+        else:
+            var2=np.minimum(vm,np.maximum(-vm,var))
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150,vmin=-vm, vmax=vm)
+        cbar = fig.colorbar(cf, ax=ax)
+        if(title != 'None'):
+            ax.set_title(title)
+
     #Function for adios reading
     def adios2_get_shape(self, f, varname):
         nstep = int(f.available_variables()[varname]['AvailableStepsCount'])
