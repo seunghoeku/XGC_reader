@@ -250,7 +250,8 @@ class xgc1(object):
 
             self.qe_tot=qe/self.dt
             self.qi_tot=qi/self.dt
-            self.qi2tot=qi2/self.dt
+            if(self.ion2_on):
+                self.qi2tot=qi2/self.dt
 
             #compare 2D data 
             #qe2=np.sum(self.e_perp_energy+self.e_para_energy,axis=2)
