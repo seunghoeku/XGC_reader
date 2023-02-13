@@ -918,12 +918,12 @@ class xgc1(object):
     def plot_one_var(self, fig, ax, var, title, vm='None'):
         if(vm=='None'):
             var2=var
-            cf=ax.tricontourf(x.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
         else:
             sigma = np.sqrt(np.mean(var*var) - np.mean(var2)**2)
             vm = 3 * sigma
             var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(x.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
 
         cbar = fig.colorbar(cf, ax=ax)
         ax.set_title(title)
