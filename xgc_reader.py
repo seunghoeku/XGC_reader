@@ -920,7 +920,7 @@ class xgc1(object):
             var2=var
             cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
         else:
-            sigma = np.sqrt(np.mean(var*var) - np.mean(var2)**2)
+            sigma = np.sqrt(np.mean(var*var) - np.mean(var)**2)
             vm = 3 * sigma
             var2=np.minimum(vm,np.maximum(-vm,var))
             cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
