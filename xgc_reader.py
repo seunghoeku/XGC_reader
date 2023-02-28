@@ -848,18 +848,20 @@ class xgc1(object):
         ax.scatter(x.mesh.r[idx],x.mesh.z[idx],s=0.05, facecolor='black', edgecolor='none')
         '''
 
-    # contour plot of one plane quantity
-    def contourf_one_var(self, var, fig, ax, title='None', vm='None'):
+    '''
+    contour plot of one plane quantity
+    '''
+    def contourf_one_var(self, var, fig, ax, title='None', vm='None', cmap='jet'):
         if(vm=='None'):
-            cf=ax.tricontourf(self.mesh.triobj,var, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap,extend='both',levels=150) #,vmin=-vm, vmax=vm)
         elif(vm=='Sigma2'):
             sigma = np.sqrt(np.mean(var*var) - np.mean(var)**2)
             vm = 2 * sigma
             var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=150,vmin=-vm, vmax=vm)
         else:
             var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=150,vmin=-vm, vmax=vm)
         cbar = fig.colorbar(cf, ax=ax)
         if(title != 'None'):
             ax.set_title(title)
@@ -910,23 +912,6 @@ class xgc1(object):
             return np.squeeze(f1.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
         elif(len(nsize)==3):
             return np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
-
-    '''
-    Plot one variable of 3D data in axes
-
-    '''
-    def plot_one_var(self, fig, ax, var, title, vm='None'):
-        if(vm=='None'):
-            var2=var
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
-        else:
-            sigma = np.sqrt(np.mean(var*var) - np.mean(var)**2)
-            vm = 3 * sigma
-            var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap='jet',extend='both',levels=150) #,vmin=-vm, vmax=vm)
-
-        cbar = fig.colorbar(cf, ax=ax)
-        ax.set_title(title)
 
     ''' 
     functions for k-w power spectrum
