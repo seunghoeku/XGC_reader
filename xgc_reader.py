@@ -8,7 +8,7 @@ TODO
 
 import numpy as np
 import os
-from matplotlib.tri import Triangulation
+from matplotlib.tri import Triangulation, LinearTriInterpolator, CubicTriInterpolator
 import adios2
 import matplotlib.pyplot as plt
 from scipy.io import matlab
@@ -514,6 +514,8 @@ class xgc1(object):
                     self.surf_len=fm.read('surf_len')
                     self.psi_surf=fm.read('psi_surf')
                     self.theta=fm.read('theta')
+                    self.m_max_surf=fm.read('m_max_surf')
+
                 self.node_vol=fm.read('node_vol')
                 self.node_vol_nearest=fm.read('node_vol_nearest')
                 self.qsafety=fm.read('qsafety')
@@ -1106,6 +1108,30 @@ class xgc1(object):
         self.plot1d_if(self.od,var=self.od.i_parallel_flow_df_1d[:ie,:],varstr=i_name+' parallel flow FSA (m/s)')
         if(self.ion2_on):
             self.plot1d_if(self.od,var=self.od.i2parallel_flow_df_1d[:ie,:],varstr=i2_name+' parallel flow FSA (m/s)')
+
+    # midplane value interpolation
+    # need array operation if var has toroidal angle
+    def midplane_var(self, var):
+        maxr = self.mesh.r.max()
+        nr = 300
+
+        r_mid = np.linspace(self.eq_axis_r, maxr, nr)
+        z_mid = np.linspace(self.eq_axis_z, self.eq_axis_z, nr)
+        psi_tri = LinearTriInterpolator(self.mesh.triobj,self.mesh.psi/self.psix)
+        psi_mid = psi_tri(r_mid, z_mid )
+
+        var_tri = LinearTriInterpolator(self.mesh.triobj,var)
+        var_mid = var_tri(r_mid, z_mid)
+
+        return psi_mid, var_mid
+
+    # read one variable from filestr -- for 3d and f3d files. 
+    # it might work with other files, too.
+    def read_one_ad2_var(self,filestr,varstr):
+        f=adios2.open(filestr,'r')
+        var=f.read(varstr)
+        f.close()
+        return var
 
 
 '''
