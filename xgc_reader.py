@@ -437,6 +437,8 @@ class xgc1(object):
         psi = kwargs.get('psi', None)
         xlim = kwargs.get('xlim', None)
         initial = kwargs.get('initial',True)
+        time_legend = kwargs.get('time_legend',True)
+
         
         if(type(psi).__module__ != np.__name__):  #None or not numpy data
             psi=obj.psi #default psi is obj.psi
@@ -449,16 +451,23 @@ class xgc1(object):
                
         stc=var.shape[0]
         fig, ax=plt.subplots()
-        lbl=["Initial","Final"]
+        it0=0 #0th time index
+        it1=stc-1 # last time index
+        tnorm=1E3
+        if(time_legend):
+            lbl=["t=%3.3f"%(obj.time[it0]*tnorm), "t=%3.3f"%(obj.time[it1]*tnorm)]
+        else:
+            lbl=["Initial","Final"]
+
         if(xlim==None):
             if(initial):
-                ax.plot(psi,var[0,],label='Initial')
-            ax.plot(psi,var[stc-1,],label='Final')
+                ax.plot(psi,var[it0,],label=lbl[0])
+            ax.plot(psi,var[it1,],label=lbl[1])
         else:
             msk=(psi >= xlim[0]) & (psi <= xlim[1])
             if(initial):
-                ax.plot(psi[msk],var[0,msk],label='Initial')
-            ax.plot(psi[msk],var[stc-1,msk],label='Final')
+                ax.plot(psi[msk],var[it0,msk],label=lbl[0])
+            ax.plot(psi[msk],var[it1,msk],label=lbl[1])
                 
         ax.legend()
         ax.set(xlabel='Normalized Pol. Flux')
@@ -539,6 +548,7 @@ class xgc1(object):
 
     """
     flux surface average data structure
+    Not completed. Use fsa_simple
     """
     class fluxavg(object):
         def __init__(self):
@@ -573,6 +583,7 @@ class xgc1(object):
         """
         data for turb intensity
         assuming convert_grid2 for flux average
+        Obsolete. need to be replaced by new one.
         """
         def __init__(self,istart,iend,istep,midwidth,mesh,f0):
             # setup flux surface average
@@ -676,6 +687,8 @@ class xgc1(object):
         plane: 0 based plane index - ignored for axisymmetric data
         Improve it to handle box 
         additional var to add: box, levels, cmap, etc
+
+        Obsolete --> try contourf_one_var
         """
         box= kwargs.get('box', None) # rmin, rmax, zmin, zmax
         plane=kwargs.get('plane',0)
@@ -814,44 +827,10 @@ class xgc1(object):
         tmask=tmask_rev[::-1]
         return tmask
 
-
-    """
-    contourf plot of a poloidal plane -- incomplete -- change name?
-    """
-    def contour(self,filename, varname, **kwargs):
-        
-        plane=0
-        Rmin=2.2; Rmax=2.3; Zmin=-0.2; Zmax=0.2
-        vm=150
-
-
-        #read data
-        f=adios2.open(filename,'r')
-        var=f.read(varname)
-        f.close()
-
-        #pick a plane
-        # if n=0 mode, use var
-        # if index is switched, transpose
-        
-        # if no_n0 is true --> remove n=0 mode
-
-        var0=var[plane,]#-np.mean(var,axis=0)
-
-
-        #whole
-        fig, ax=plt.subplots()
-        '''
-        cf=ax.tricontourf(x.mesh.triobj,var0, cmap='jet',extend='both',levels=150,vmin=-vm,vmax=vm)
-        cbar = fig.colorbar(cf)
-        plt.title('Perturbed Phi (V)')
-        ax.scatter(x.mesh.r[idx],x.mesh.z[idx],s=0.05, facecolor='black', edgecolor='none')
-        '''
-
     '''
     contour plot of one plane quantity
     '''
-    def contourf_one_var(self, var, fig, ax, title='None', vm='None', cmap='jet'):
+    def contourf_one_var(self, fig, ax, var, title='None', vm='None', cmap='jet'):
         if(vm=='None'):
             cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap,extend='both',levels=150) #,vmin=-vm, vmax=vm)
         elif(vm=='Sigma2'):
@@ -1047,12 +1026,87 @@ class xgc1(object):
         omega=np.fft.fftshift(np.fft.fftfreq(nt,1/omax))
 
         return k, omega
-        
+    
+    '''
+    Show separatrix in plot
+    ''' 
     def find_sep_idx(self):
         isep = np.argmin(abs(self.mesh.psi_surf-self.psix))
         length=self.mesh.surf_len[isep]
         msep = self.mesh.surf_idx[isep,0:length]-1
         return msep
+
+    def show_sep(self,ax):
+        msep=self.find_sep_idx()
+        ax.plot(x.mesh.r[msep],x.mesh.z[msep],label='Separatrix')
+
+    '''
+    Basic analysis
+    '''
+    def profile_reports(self,i_name='Main ion',i2_name='Impurity', edge_lim=[0.85,1.05]):
+
+        #show initial profiles
+        #temperature
+        tunit=1E3
+        fig, ax=plt.subplots()
+        if(self.electron_on):
+            plt.plot(self.od.psi, self.od.Te[0,:]/tunit,label='Elec.')
+        plt.plot(self.od.psi, self.od.Ti[0,:]/tunit,label=i_name)
+        if(self.ion2_on):
+            plt.plot(self.od.psi, self.od.Ti2[0,:]/tunit,'--',label=i2_name)
+        
+        plt.legend()
+        #plt.xlim(0., 1.08)
+        #plt.ylim(0, 5.5)
+        plt.xlabel('Normalized Pol. Flux')
+        plt.ylabel('Temperature (keV)')
+        plt.title('Initial Temperature')
+
+        #density
+        dunit=1E19
+        fig, ax=plt.subplots()
+        if(self.electron_on):
+            plt.plot(self.od.psi,self.od.e_gc_density_df_1d[0,:]/dunit,label='Elec.')
+        plt.plot(self.od.psi,self.od.i_gc_density_df_1d[0,:]/dunit,label=i_name)
+        if(self.ion2_on):
+            plt.plot(self.od.psi,self.od.i2gc_density_df_1d[0,:]/dunit,'--',label=i2_name)
+        plt.legend()
+        #plt.xlim(0., 1.08)
+        #plt.ylim(0, 5.5)
+        plt.xlabel('Normalized Pol. Flux')
+        plt.ylabel('Density ($10^{19} m^{-3}$)')
+        plt.title('Initial Density')
+
+        # Edge range
+        ie=-1
+        if(self.electron_on):
+            self.plot1d_if(self.od,var=self.od.e_gc_density_df_1d[:ie,:],varstr='Density (m^-3)')
+            self.plot1d_if(self.od,var=self.od.e_gc_density_df_1d[:ie,:],varstr='Density (m^-3)',xlim=edge_lim)
+
+        self.plot1d_if(self.od,var=self.od.i_gc_density_df_1d[:ie,:],varstr=i_name+' g.c. Density (m^-3)')
+        self.plot1d_if(self.od,var=self.od.i_gc_density_df_1d[:ie,:],varstr=i_name+' g.c. Density (m^-3)',xlim=edge_lim)
+
+        if(self.ion2_on):
+            self.plot1d_if(self.od,var=self.od.i2gc_density_df_1d[:ie,:],varstr=i2_name+' g.c. Density (m^-3)')
+            self.plot1d_if(self.od,var=self.od.i2gc_density_df_1d[:ie,:],varstr=i2_name+' g.c. Density (m^-3)',xlim=edge_lim)
+
+        if(self.electron_on):
+            self.plot1d_if(self.od,var=self.od.Te[:ie,:],varstr='Elec. Temperature (eV)')
+            self.plot1d_if(self.od,var=self.od.Te[:ie,:],varstr='Elec. Temperature (eV)',xlim=edge_lim)
+
+        self.plot1d_if(self.od,var=self.od.Ti[:ie,:],varstr=i_name+' Temperature (eV)')
+        self.plot1d_if(self.od,var=self.od.Ti[:ie,:],varstr=i_name+' Temperature (eV)',xlim=edge_lim)
+
+        if(self.ion2_on):
+            self.plot1d_if(self.od,var=self.od.Ti2[:ie,:],varstr=i2_name+' Temperature (eV)')
+            self.plot1d_if(self.od,var=self.od.Ti2[:ie,:],varstr=i2_name+' Temperature (eV)',xlim=edge_lim)
+
+
+        #self.plot1d_if(self.od,var=self.od.e_parallel_mean_en_1d[:,:],varstr='elec full-f',xlim=[0.9, 1.07])
+        self.plot1d_if(self.od,var=self.od.i_parallel_flow_df_1d[:ie,:],varstr=i_name+' parallel flow FSA (m/s)')
+        if(self.ion2_on):
+            self.plot1d_if(self.od,var=self.od.i2parallel_flow_df_1d[:ie,:],varstr=i2_name+' parallel flow FSA (m/s)')
+
 
 '''
 def load_prf(filename):
