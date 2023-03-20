@@ -19,6 +19,12 @@ import scipy.sparse as sp
 
 class xgc1(object):
     
+    class cnst:
+        echarge = 1.602E-19
+        protmass=  1.67E-27
+        mu0 = 4 * 3.141592 * 1E-7
+
+        
     def __init__(self):
         """ 
         initialize it from the current directory.
@@ -43,7 +49,7 @@ class xgc1(object):
         self.sml_wedge_n = self.unit_dic['sml_wedge_n']
         self.diag_1d_period = self.unit_dic['diag_1d_period']
 
-    def load_oned(self):
+    def load_oned(self, i_mass=2, i2mass=12):
         """
         load xgc.oneddiag.bp and some post process
         """
@@ -73,13 +79,11 @@ class xgc1(object):
             self.ion2_on=False
         else:
             self.ion2_on=True
-            Ti2para=self.od.i2parallel_mean_en_df_1d  #parallel flow ignored, correct it later
+            Ti2para=self.od.i2parallel_mean_en_df_1d  - 0.5* i2mass * self.cnst.protmass * self.od.i_parallel_flow_df_1d**2 / self.cnst.echarge
             self.od.Ti2=(Ti2perp+Ti2para)/3*2
 
-
-
         Tiperp=self.od.i_perp_temperature_df_1d
-        Tipara=self.od.i_parallel_mean_en_df_1d  #parallel flow ignored, correct it later
+        Tipara=self.od.i_parallel_mean_en_df_1d - 0.5* i_mass * self.cnst.protmass * self.od.i_parallel_flow_df_1d**2 / self.cnst.echarge  #parallel flow ignored, correct it later
         self.od.Ti=(Tiperp+Tipara)/3*2
 
         #ExB shear calculation
@@ -800,7 +804,7 @@ class xgc1(object):
         print("simulation delta t = %e s" % self.sml_dt)
         print("wedge number = %d" % self.sml_wedge_n)
         print("Ion mass = %d" % self.unit_dic['ptl_ion_mass_au'])
-        print("particle number = %e" % (self.unit_dic['sml_totalpe']* self.unit_dic['ptl_num']))
+        #print("particle number = %e" % (self.unit_dic['sml_totalpe']* self.unit_dic['ptl_num']))
     
     def midplane(self):
         #convert 1d psi coord to r
@@ -1040,12 +1044,12 @@ class xgc1(object):
 
     def show_sep(self,ax):
         msep=self.find_sep_idx()
-        ax.plot(x.mesh.r[msep],x.mesh.z[msep],label='Separatrix')
+        ax.plot(self.mesh.r[msep],self.mesh.z[msep],label='Separatrix')
 
     '''
     Basic analysis
     '''
-    def profile_reports(self,i_name='Main ion',i2_name='Impurity', edge_lim=[0.85,1.05]):
+    def profile_reports(self,i_name='Main ion',i2_name='Impurity', init_idx=0, end_idx=-1, edge_lim=[0.85,1.05]):
 
         #show initial profiles
         #temperature
@@ -1080,7 +1084,9 @@ class xgc1(object):
         plt.title('Initial Density')
 
         # Edge range
-        ie=-1
+        ie=end_idx
+        # to use init_idx, plot1d_if need to be adjusted. 
+        # need to pass init_idx ( & restructure the code to send whole array)
         if(self.electron_on):
             self.plot1d_if(self.od,var=self.od.e_gc_density_df_1d[:ie,:],varstr='Density (m^-3)')
             self.plot1d_if(self.od,var=self.od.e_gc_density_df_1d[:ie,:],varstr='Density (m^-3)',xlim=edge_lim)
@@ -1108,6 +1114,60 @@ class xgc1(object):
         self.plot1d_if(self.od,var=self.od.i_parallel_flow_df_1d[:ie,:],varstr=i_name+' parallel flow FSA (m/s)')
         if(self.ion2_on):
             self.plot1d_if(self.od,var=self.od.i2parallel_flow_df_1d[:ie,:],varstr=i2_name+' parallel flow FSA (m/s)')
+
+    def turb_2d_report(self,i_name='Main ion',i2_name='Impurity', pm=slice(0,-1),tm=slice(0,-1), wnorm=1E6, cmap='jet'):
+
+
+        # elec heat flux
+        if(self.elec_on):
+            fig, ax=plt.subplots()
+            cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxexbe[tm,pm]/wnorm,levels=50,cmap=cmap)
+            fig.colorbar(cf)
+            plt.title('Electron Heat Flux by ExB (MW)')
+            plt.xlabel('Poloidal Flux')
+            plt.ylabel('Time (ms)')
+
+            fig, ax=plt.subplots()
+            cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxe[tm,pm]/wnorm,levels=50,cmap=cmap)
+            fig.colorbar(cf)
+            plt.title('Electron Heat Flux (MW)')
+            plt.xlabel('Poloidal Flux')
+            plt.ylabel('Time (ms)')
+
+        # ion heat flux
+        fig, ax=plt.subplots()
+        cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxexbi[tm,pm]/wnorm,levels=50,cmap=cmap)
+        fig.colorbar(cf)
+        plt.title('%s Heat Flux by ExB (MW)'%i_name)
+        plt.xlabel('Poloidal Flux')
+        plt.ylabel('Time (ms)')
+
+        fig, ax=plt.subplots()
+        cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxi[tm,pm]/wnorm,levels=50,cmap=cmap)
+        fig.colorbar(cf)
+        plt.title('%s Heat Flux (MW)'%i_name)
+        plt.xlabel('Poloidal Flux')
+        plt.ylabel('Time (ms)')
+
+        # i2 heat flux
+        if(slef.ion2_on):
+            fig, ax=plt.subplots()
+            cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxexbi2[tm,pm]/wnorm,levels=50,cmap=cmap)
+            fig.colorbar(cf)
+            plt.title('%s Heat Flux by ExB (MW)'%i2_name)
+            plt.xlabel('Poloidal Flux')
+            plt.ylabel('Time (ms)')
+
+            fig, ax=plt.subplots()
+            cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxi2[tm,pm]/wnorm,levels=50,cmap=cmap)
+            fig.colorbar(cf)
+            plt.title('%s Heat Flux (MW)'%i2_name)
+            plt.xlabel('Poloidal Flux')
+            plt.ylabel('Time (ms)')
+
+        
+
+
 
     # midplane value interpolation
     # need array operation if var has toroidal angle
