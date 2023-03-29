@@ -1165,7 +1165,22 @@ class xgc1(object):
             plt.xlabel('Poloidal Flux')
             plt.ylabel('Time (ms)')
 
-        
+        #electron PARTICLE flux
+        if(self.elec_on):
+            fig, ax=plt.subplots()
+            cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.pfluxexbe[tm,pm],levels=50,cmap='jet')
+            fig.colorbar(cf)
+            plt.title('Elec Particle Flux by ExB (#/s)')
+            plt.xlabel('Poloidal Flux')
+            plt.ylabel('Time (ms)')
+
+        #ion PARTICLE flux
+        fig, ax=plt.subplots()
+        cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.pfluxexbi[tm,pm],levels=50,cmap='jet')
+        fig.colorbar(cf)
+        plt.title('Ion G.C. Particle Flux by ExB (#/s)')
+        plt.xlabel('Poloidal Flux')
+        plt.ylabel('Time (ms)')
 
 
 
