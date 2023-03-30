@@ -897,6 +897,8 @@ class xgc1(object):
             return np.squeeze(f1.read(varname, start=(0,0), count=nsize, step_start=step, step_count=1))
         elif(len(nsize)==3):
             return np.squeeze(f1.read(varname, start=(0,0,0), count=nsize, step_start=step, step_count=1))
+        elif(len(nsize)==4):
+            return np.squeeze(f1.read(varname, start=(0,0,0,0), count=nsize, step_start=step, step_count=1))
 
     ''' 
     functions for k-w power spectrum
@@ -1119,7 +1121,7 @@ class xgc1(object):
 
 
         # elec heat flux
-        if(self.elec_on):
+        if(self.electron_on):
             fig, ax=plt.subplots()
             cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxexbe[tm,pm]/wnorm,levels=50,cmap=cmap)
             fig.colorbar(cf)
@@ -1150,7 +1152,7 @@ class xgc1(object):
         plt.ylabel('Time (ms)')
 
         # i2 heat flux
-        if(slef.ion2_on):
+        if(self.ion2_on):
             fig, ax=plt.subplots()
             cf=ax.contourf(self.od.psi[pm],self.od.time[tm]*1E3,self.od.efluxexbi2[tm,pm]/wnorm,levels=50,cmap=cmap)
             fig.colorbar(cf)
