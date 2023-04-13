@@ -79,7 +79,7 @@ class xgc1(object):
             self.ion2_on=False
         else:
             self.ion2_on=True
-            Ti2para=self.od.i2parallel_mean_en_df_1d  - 0.5* i2mass * self.cnst.protmass * self.od.i_parallel_flow_df_1d**2 / self.cnst.echarge
+            Ti2para=self.od.i2parallel_mean_en_df_1d  - 0.5* i2mass * self.cnst.protmass * self.od.i2parallel_flow_df_1d**2 / self.cnst.echarge
             self.od.Ti2=(Ti2perp+Ti2para)/3*2
 
         Tiperp=self.od.i_perp_temperature_df_1d
@@ -905,7 +905,7 @@ class xgc1(object):
     '''
     def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half):
         #find line segment
-        ms, psi0, length = self.find_line_segment(self,ns_half, psi_target)
+        ms, psi0, length = self.find_line_segment(ns_half, psi_target)
         #get total distance of the line segment
         dist=np.sum(np.sqrt( (self.mesh.r[ms[0:-1]]-self.mesh.r[ms[1:]])**2 + (self.mesh.z[ms[0:-1]]-self.mesh.z[ms[1:]])**2 ))
 
