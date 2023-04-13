@@ -15,7 +15,7 @@ from scipy.io import matlab
 from scipy.optimize import curve_fit
 from scipy.special import erfc
 import scipy.sparse as sp
-
+from tqdm.auto import trange, tqdm
 
 class xgc1(object):
     
@@ -927,24 +927,34 @@ class xgc1(object):
     
     # Find line segment of midplane with psi=psi_target or nearest flux surface
     # Works inside separatrix, but not separatrix or SOL
-    def find_line_segment(self, n, psi_target):
+    def find_line_segment(self, n, psi_target, dir='middle'):
         tmp=np.where(self.mesh.psi_surf/self.psix>psi_target)
         isurf=tmp[0][0]
         #plt.plot(psi_surf)
         msk=self.mesh.surf_idx[isurf,0:self.mesh.surf_len[isurf]] -1 #node index of the surface, -1 for zero base
-        #plt.plot(self.mesh.r[msk],self.mesh.z[msk])
-        tmp1=msk[-n:]
-        tmp2=msk[0:n]
-        ms=np.append(tmp1,tmp2)
+        #plt.plot(x.mesh.r[msk],x.mesh.z[msk])
+        if(dir=='middle'):
+            tmp1=msk[-n:]
+            tmp2=msk[0:n]
+            ms=np.append(tmp1,tmp2)
+        elif(dir=='up'):
+            ms=msk[0:2*n]
+        else:
+            ms=msk[-2*n:]
         ax=plt.subplot()
-        ax.plot(self.mesh.r[ms],self.mesh.z[ms])
+        ax.plot(self.mesh.r[ms],self.mesh.z[ms],'.')
         ax.axis('equal')
         psi0=self.mesh.psi_surf[isurf]/self.psix
-
+    
         dr=self.mesh.r[ms[1:]]-self.mesh.r[ms[0:-1]]
         dz=self.mesh.z[ms[1:]]-self.mesh.z[ms[0:-1]]
         ds=np.sqrt( (dr)**2 + (dz)**2 )
         length=np.sum(ds)
+
+        begin_end_ratio = ds[0]/ds[-1]
+        print('ratio=',begin_end_ratio)
+        if((begin_end_ratio>1.5) or (begin_end_ratio < 0.7)):
+            ms, psi0, length = self.find_line_segment(n, psi_target, dir='up')
 
         return ms, psi0, length
 
@@ -958,7 +968,8 @@ class xgc1(object):
         pol_vi = 0
         pol_ve  = 0
         ct= 0
-        for i in range(istart,iend, skip):
+        pbar = tqdm(range(istart,iend,skip))
+        for i in pbar:
             f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'r')
             i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
             e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
@@ -994,7 +1005,8 @@ class xgc1(object):
 
         dpot4=np.zeros((nphi,nt,ns))
         time=np.zeros(nt)
-        for i in range(istart,iend+skip,skip):
+        pbar = tqdm(range(istart,iend+skip,skip))
+        for i in pbar:
             f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
