@@ -928,8 +928,8 @@ class xgc1(object):
     # Find line segment of midplane with psi=psi_target or nearest flux surface
     # Works inside separatrix, but not separatrix or SOL
     def find_line_segment(self, n, psi_target, dir='middle'):
-        tmp=np.argmin( (self.mesh.psi_surf/self.psix-psi_target)**2 )
-        isurf=tmp[0][0]
+        isurf=np.argmin( np.abs(self.mesh.psi_surf/self.psix-psi_target) )
+
         #plt.plot(psi_surf)
         msk=self.mesh.surf_idx[isurf,0:self.mesh.surf_len[isurf]] -1 #node index of the surface, -1 for zero base
         #plt.plot(x.mesh.r[msk],x.mesh.z[msk])
