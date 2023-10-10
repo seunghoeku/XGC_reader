@@ -109,7 +109,7 @@ class xgc1(object):
         #plasma beta (electron)
         # (e n T) / (B^2/2mu0)
         try:
-            self.od.beta_e= self.cnst.echarge *self.od.density*self.od.Te /(self.eq_axis_b*0.5/self.cnst.mu0)
+            self.od.beta_e= self.cnst.echarge *self.od.density*self.od.Te /(self.eq_axis_b**2*0.5/self.cnst.mu0)
         except:
             print ('electron beta calculation failed. No electron? units.m not loaded?')
 
