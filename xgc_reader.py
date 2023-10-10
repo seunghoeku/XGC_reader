@@ -106,6 +106,12 @@ class xgc1(object):
         if(self.electron_on):
             self.od.Lte =self.od.Te  / self.od.d_dpsi(self.od.Te     , self.od.psi_mks) / np.sqrt(self.od.grad_psi_sqr)
             
+        #plasma beta (electron)
+        # (e n T) / (B^2/2mu0)
+        try:
+            self.od.beta_e= self.cnst.echarge *self.od.density*self.od.Te /(self.eq_axis_b*0.5/self.cnst.mu0)
+        except:
+            print ('electron beta calculation failed. No electron? units.m not loaded?')
 
         #find tmask
         d=self.od.step[1]-self.od.step[0]
@@ -1097,6 +1103,18 @@ class xgc1(object):
         plt.ylabel('Density ($10^{19} m^{-3}$)')
         plt.title('Initial Density')
 
+        #plasma beta (electron) - initial
+        fig, ax=plt.subplots()
+        bunit=1E-2
+        try:
+            plt.plot(self.od.psi,self.od.beta_e[0,:]/bunit)
+            plt.title('Electron beta (%)')
+            plt.xlabel('Normalized Pol. Flux')
+            plt.ylabel('$beta_e$ (%)')
+        except:
+            print('beta_e plot ignored')
+
+
         # Edge range
         ie=end_idx
         # to use init_idx, plot1d_if need to be adjusted. 
@@ -1128,6 +1146,9 @@ class xgc1(object):
         self.plot1d_if(self.od,var=self.od.i_parallel_flow_df_1d[:ie,:],varstr=i_name+' parallel flow FSA (m/s)')
         if(self.ion2_on):
             self.plot1d_if(self.od,var=self.od.i2parallel_flow_df_1d[:ie,:],varstr=i2_name+' parallel flow FSA (m/s)')
+
+
+
 
     def turb_2d_report(self,i_name='Main ion',i2_name='Impurity', pm=slice(0,-1),tm=slice(0,-1), wnorm=1E6, cmap='jet'):
 
