@@ -59,6 +59,11 @@ class eqd(object):
             if(end_flag!=-1):
                 print('Error: end flag is not -1. end_flag= %d'%end_flag)
 
+            #post process
+            # setup rgrid and zgrid
+            self.rgrid=np.linspace(self.min_r, self.max_r, num=self.mr)
+            self.zgrid=np.linspace(self.min_z, self.max_z, num=self.mr)
+
     def write_eqd(self,filename):
         with open(filename, 'w') as file:
             self.header
