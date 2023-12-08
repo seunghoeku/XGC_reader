@@ -46,7 +46,10 @@ class xgc1(object):
         self.eq_axis_z = self.unit_dic['eq_axis_z']
         self.eq_axis_b = self.unit_dic['eq_axis_b']
         self.sml_dt = self.unit_dic['sml_dt']
-        self.sml_wedge_n = self.unit_dic['sml_wedge_n']
+        try:
+            self.sml_wedge_n = self.unit_dic['sml_wedge_n']
+        except:
+            self.sml_wedge_n=1 # XGCa    
         self.diag_1d_period = self.unit_dic['diag_1d_period']
 
     def load_oned(self, i_mass=2, i2mass=12):
