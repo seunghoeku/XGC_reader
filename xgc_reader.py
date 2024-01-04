@@ -421,8 +421,14 @@ class xgc1(object):
     """
         Load xgc.bfield.bp -- equilibrium bfield 
     """
-    #def load_bfield  -- not yet.
-    
+    def load_bfield(self):
+        with adios2.open("xgc.bfield.bp","r") as f:
+
+            self.bfield = f.read('node_data[0]/values')
+            if(self.bfield.shape[0]==0):
+                self.bfield = f.read('/node_data[0]/values')
+            if(self.bfield.shape[0]==0):
+                self.bfield = f.read('bfield')
 
     """
         load the whole  .m file and return a dictionary contains all the entries.
@@ -1220,8 +1226,6 @@ class xgc1(object):
         plt.xlabel('Poloidal Flux')
         plt.ylabel('Time (ms)')
 
-
-
     # midplane value interpolation
     # need array operation if var has toroidal angle
     def midplane_var(self, var):
@@ -1246,6 +1250,207 @@ class xgc1(object):
         f.close()
         return var
 
+
+    class xgc_mat(object):
+        def create_sparse_xgc(self,nelement,eindex,value,m=None,n=None):
+            """Create Python sparse matrix from XGC data"""
+            from scipy.sparse import csr_matrix
+            
+            if m is None: m = nelement.size
+            if n is None: n = nelement.size
+            
+            #format for Python sparse matrix
+            indptr = np.insert(np.cumsum(nelement),0,0)
+            indices = np.empty((indptr[-1],))
+            data = np.empty((indptr[-1],))
+            for i in range(nelement.size):
+                    indices[indptr[i]:indptr[i+1]] = eindex[i,0:nelement[i]]
+                    data[indptr[i]:indptr[i+1]] = value[i,0:nelement[i]]
+            #create sparse matrices
+            spmat = csr_matrix((data,indices,indptr),shape=(m,n))
+            return spmat
+
+
+    class grad_rz(xgc_mat):    
+        """
+        gradient operation
+        """
+        def __init__(self):
+            with adios2.open("xgc.grad_rz.bp","r") as f:
+                try:
+                    # Flag indicating whether gradient is (R,Z) or (psi,theta)
+                    self.mat_basis = f.read('basis')
+
+                    # Set up matrix for psi/R derivative
+                    nelement       = f.read('nelement_r')
+                    eindex         = f.read('eindex_r')-1
+                    value          = f.read('value_r')
+                    nrows          = f.read('m_r')
+                    ncols          = f.read('n_r')
+                    self.mat_psi_r=self.create_sparse_xgc(nelement,eindex,value,m=nrows,n=ncols)
+
+                    # Set up matrix for theta/Z derivative
+                    nelement       = f.read('nelement_z')
+                    eindex         = f.read('eindex_z')-1
+                    value          = f.read('value_z')
+                    nrows          = f.read('m_z')
+                    ncols          = f.read('n_z')
+                    self.mat_theta_z=self.create_sparse_xgc(nelement,eindex,value,m=nrows,n=ncols)
+
+                except:
+                    self.mat_psi_r   = 0
+                    self.mat_theta_z = 0
+                    self.mat_basis   = 0
+
+    def load_grad_rz(self):
+        self.grad = self.grad_rz()
+
+    "ff_mappings"
+    class ff_mapping(xgc_mat):
+        def __init__(self,ff_name):
+                fn       ='xgc.ff_'+ff_name+'.bp'
+                with adios2.open(fn,"r") as f:
+                    nelement = f.read('nelement')
+                    eindex   = f.read('eindex')-1
+                    value    = f.read('value')
+                    nrows    = f.read('nrows')
+                    ncols    = f.read('ncols')
+                    dl_par   = f.read('dl_par')
+                    self.mat=self.create_sparse_xgc(nelement, eindex, value, m=nrows, n=ncols)
+                    #
+                    self.dl  = dl_par
+
+    def load_ff_mapping(self):
+        map_names = ["1dp_fwd","1dp_rev","hdp_fwd","hdp_rev"]
+        for ff_name in map_names:
+            #tmp=ff_mapping(ff_name)
+            self.__setattr__('ff_'+ff_name,self.ff_mapping(ff_name))
+
+    # Converts field into field-following representation (projection to midplane of
+    # of a toroidal section)
+    # input is expected to have shape (nnode,nphi,dim_field) or (nnode,nphi) (assuming dim_field=1)
+    # output will be (nphi,nnode,dim_field,2) for dim_field=3 or
+    # (nphi,nnode,2) for dim_field=1
+    def conv_real2ff(self,field):
+        if (field.ndim==3):
+            field_work = field
+        elif (field.ndim==2):
+            field_work = np.zeros((field.shape[0],field.shape[1],1),dtype=field.dtype)
+            field_work[:,:,0] = field[:,:]
+        else:
+            print("conv_real2ff: input field has wrong shape.")
+            return -1
+        fdim = field_work.shape[2]
+        nphi = field_work.shape[1]
+        field_ff = np.zeros((field_work.shape[0],nphi,fdim,2),dtype=field_work.dtype)
+        for iphi in range(nphi):
+            iphi_l  = iphi-1 if iphi>0 else nphi-1
+            iphi_r  = iphi
+            for j in range(fdim):
+                field_ff[:,iphi,j,0] = self.ff_hdp_rev.mat.dot(field_work[:,iphi_l,j])
+                field_ff[:,iphi,j,1] = self.ff_hdp_fwd.mat.dot(field_work[:,iphi_r,j])
+        field_ff = np.transpose(field_ff,(1,0,2,3))
+        if fdim==1:
+            field_ff = (np.transpose(field_ff,(0,1,3,2)))[:,:,:]
+        #
+        return field_ff
+
+
+
+    # Calculates the (psi,theta)/(R,Z) derivative of field. from RH xgc.py
+    def GradPlane(self,field):
+        if field.ndim>2:
+            print("GradPlane: Wrong array shape of field, must be (nnode,nphi) or (nnode)")
+            return -1
+        nnode = field.shape[0]
+        if field.ndim==2:
+            field_loc = field
+            nphi = field.shape[1]
+        else:
+            nphi           = 1
+            field_loc      = np.zeros((nnode,nphi),dtype=field.dtype)
+            field_loc[:,0] = field
+        grad_field = np.zeros((nnode,nphi,2),dtype=field.dtype)
+        for iphi in range(nphi):
+            grad_field[:,iphi,0] = self.grad.mat_psi_r.dot(field_loc[:,iphi])
+            grad_field[:,iphi,1] = self.grad.mat_theta_z.dot(field_loc[:,iphi])
+        return grad_field
+
+
+    # Calculates the 2nd order accurate finite difference derivative
+    # of field along the magnetic field, i.e., b.grad(field)
+    def GradParX(self,field):
+        if field.ndim!=2:
+            print("GradParX: Wrong array shape of field, must be (nnode,nphi)",field.shape)
+            return -1
+        nphi  = field.shape[1]
+        nnode = field.shape[0]
+        if nnode!=self.ff_1dp_fwd.mat.shape[0]:
+            return -1
+        sgn   = np.sign(self.bfield[0,2])
+        l_l   = self.ff_1dp_rev.dl
+        l_r   = self.ff_1dp_fwd.dl
+        l_tot = l_r+l_l
+        bdotgrad_field = np.zeros_like(field)
+        for iphi in range(nphi):
+            iphi_l  = iphi-1 if iphi>0 else nphi-1
+            iphi_r  = np.fmod((iphi+1),nphi)
+            field_l = self.ff_1dp_rev.mat.dot(field[:,iphi_l])
+            field_r = self.ff_1dp_fwd.mat.dot(field[:,iphi_r])
+            #
+            bdotgrad_field[:,iphi] = sgn * (-(    l_r)/(l_l*l_tot)*field_l        \
+                                            +(l_r-l_l)/(l_l*l_r  )*field[:,iphi]  \
+                                            +(    l_l)/(l_r*l_tot)*field_r        )
+        return bdotgrad_field
+
+
+    def convert_3d_grad_all(self,field):
+        if field.ndim!=2:
+            print("convert_3d_grad_all: Wrong array shape of field, must be (nnode,nphi)")
+            return -1
+        nphi  = field.shape[1]
+        nnode = field.shape[0]
+        grad_field = np.zeros((nnode,nphi,3))
+        grad_field[:,:,0:2] = self.GradPlane(field)
+        grad_field[:,:,2]   = self.GradParX(field)
+        return grad_field
+
+
+    def write_dAs_ff_for_poincare(self,fnum):
+        #load As
+        fn='xgc.3d.%5.5d.bp'%fnum
+        with adios2.open(fn,"r") as f:
+            As = f.read('apars').transpose()
+            print('Read As[%d,%d] from '%(As.shape[0],As.shape[1]) +fn)
+            print('As',As.shape)
+
+            # Calculate grad(As) and transform As and grad(As) to
+            # field-following representation
+            dAs        = self.convert_3d_grad_all(As)
+            print('dAs',dAs.shape)
+
+            As_phi_ff  = self.conv_real2ff(As)
+            print('As_phi_ff',As_phi_ff.shape)
+
+            dAs_phi_ff = -self.conv_real2ff(dAs)
+            print('dAs_phi_ff',dAs_phi_ff.shape)
+
+            # Write Adios file with perturbed vector potential in
+            # field-following representation
+            import adios2 as ad
+            fn2='xgc.dAs.%5.5d.bp'%fnum
+            fbp   = ad.open(fn2,"w")
+            nphi  = dAs_phi_ff.shape[0]
+            nnode = dAs_phi_ff.shape[1]
+            fbp.write("nphi",np.array([nphi]))
+            fbp.write("nnode",np.array([nnode]))
+            # For some reason the numpy data layout for these variables is not
+            # C-style --> make contiguous.
+            dum = np.ascontiguousarray(As_phi_ff)
+            fbp.write("As_phi_ff",dum, dum.shape, [0]*len(dum.shape), dum.shape)
+            dum = np.ascontiguousarray(dAs_phi_ff)
+            fbp.write("dAs_phi_ff",dum, dum.shape, [0]*len(dum.shape), dum.shape)
+            fbp.close()
 
 '''
 def load_prf(filename):
