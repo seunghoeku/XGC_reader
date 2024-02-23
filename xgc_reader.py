@@ -511,6 +511,7 @@ class xgc1(object):
         """
         def __init__(self):
             with adios2.open("xgc.mesh.bp","r") as fm:
+                fm.__next__()
                 rz=fm.read('rz')
                 self.cnct=fm.read('/cell_set[0]/node_connect_list')
                 self.r=rz[:,0]
