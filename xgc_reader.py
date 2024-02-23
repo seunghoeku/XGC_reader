@@ -513,7 +513,7 @@ class xgc1(object):
             with adios2.open("xgc.mesh.bp","r") as fm:
                 fm.__next__()
                 rz=fm.read('rz')
-                self.cnct=fm.read('/cell_set[0]/node_connect_list')
+                self.cnct=fm.read('node_connect_list')
                 self.r=rz[:,0]
                 self.z=rz[:,1]
                 self.triobj = Triangulation(self.r,self.z,self.cnct)
@@ -542,6 +542,7 @@ class xgc1(object):
         """
         def __init__(self):
             with adios2.open("xgc.f0.mesh.bp","r") as f:
+                f.__next__()
                 T_ev=f.read('f0_T_ev')
                 den0=f.read('f0_den')
                 flow=f.read('f0_flow')
@@ -566,6 +567,7 @@ class xgc1(object):
     class fluxavg(object):
         def __init__(self):
             with adios2.open("xgc.fluxavg.bp","r") as f:
+                f.__next__()
                 eindex=f.read('eindex')
                 nelement=f.read('nelement')
                 self.npsi=f.read('npsi')
@@ -588,6 +590,7 @@ class xgc1(object):
         """
         def __init__(self):
             with adios2.open("xgc.volumes.bp","r") as f:
+                f.__next__()
                 self.od=f.read("diag_1d_vol")
                 #try:
                 self.adj_eden=f.read("psn_adj_eden_vol")
@@ -616,6 +619,7 @@ class xgc1(object):
 
                 #read data
                 with adios2.open(filename,"r") as f:
+                    f.__next__()
                     dpot=f.read("dpot")
                     dden=f.read("eden")
 
@@ -709,6 +713,7 @@ class xgc1(object):
         cmap = kwargs.get('cmap', 'jet')
         
         f=adios2.open(filestr,'r')
+        f.__next__()
         var=f.read(varstr)
         fig, ax=plt.subplots()
 
@@ -978,6 +983,8 @@ class xgc1(object):
         pbar = tqdm(range(istart,iend,skip))
         for i in pbar:
             f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'r')
+            f.__next__()
+
             i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
             e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
             f.close()
@@ -1006,6 +1013,8 @@ class xgc1(object):
         #get nphi
         i=istart
         f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+        f.__next__()
+
         dpot=f.read('dpot')
         f.close()
         nphi=np.shape(dpot)[0]
@@ -1015,6 +1024,7 @@ class xgc1(object):
         pbar = tqdm(range(istart,iend+skip,skip))
         for i in pbar:
             f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+            f.__next__()
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
             time1=f.read('time')
@@ -1240,6 +1250,7 @@ class xgc1(object):
     # it might work with other files, too.
     def read_one_ad2_var(self,filestr,varstr):
         f=adios2.open(filestr,'r')
+        f.__next__()
         var=f.read(varstr)
         f.close()
         return var
