@@ -677,6 +677,9 @@ class xgc1(object):
         #ion flux
         self.od.efluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_en_flux_df_1d * dvdpall
         self.od.efluxexbi = self.od.i_gc_density_df_1d * self.od.i_radial_en_flux_ExB_df_1d * dvdpall
+        if hasattr(self.od,'i_radial_en_flux_3db_df_1d'):
+            self.od.eflux3dbi = self.od.i_gc_density_df_1d * self.od.i_radial_en_flux_3db_df_1d * dvdpall
+
         self.od.cfluxi    = self.od.i_gc_density_df_1d * self.od.Ti * ec * self.od.i_radial_flux_df_1d * dvdpall
         self.od.cfluxexbi = self.od.i_gc_density_df_1d * self.od.Ti * ec * self.od.i_radial_flux_ExB_df_1d * dvdpall
         self.od.pfluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_flux_df_1d * dvdpall
@@ -685,6 +688,9 @@ class xgc1(object):
         if(self.electron_on):
             self.od.efluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_df_1d * dvdpall
             self.od.efluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_ExB_df_1d * dvdpall
+            if hasattr(self.od,'e_radial_en_flux_3db_df_1d'):
+                self.od.eflux3dbe = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_3db_df_1d * dvdpall
+
             self.od.cfluxe    = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_df_1d * dvdpall
             self.od.cfluxexbe = self.od.e_gc_density_df_1d * self.od.Te * ec * self.od.e_radial_flux_ExB_df_1d * dvdpall
             self.od.pfluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_flux_df_1d * dvdpall
@@ -693,6 +699,9 @@ class xgc1(object):
         if(self.ion2_on):
             self.od.efluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_en_flux_df_1d * dvdpall
             self.od.efluxexbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_en_flux_ExB_df_1d * dvdpall
+            if hasattr(self.od,'i_radial_en_flux_3db_df_1d'):
+                self.od.eflux3dbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_en_flux_3db_df_1d * dvdpall
+
             self.od.cfluxi2    = self.od.i2gc_density_df_1d * self.od.Ti2 * ec * self.od.i2radial_flux_df_1d * dvdpall
             self.od.cfluxexbi2 = self.od.i2gc_density_df_1d * self.od.Ti2 * ec * self.od.i2radial_flux_ExB_df_1d * dvdpall
             self.od.pfluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_flux_df_1d * dvdpall
