@@ -513,7 +513,7 @@ class xgc1(object):
             with adios2.open("xgc.mesh.bp","r") as fm:
                 fm.__next__()
                 rz=fm.read('rz')
-                self.cnct=fm.read('node_connect_list')
+                self.cnct=fm.read('nd_connect_list')
                 self.r=rz[:,0]
                 self.z=rz[:,1]
                 self.triobj = Triangulation(self.r,self.z,self.cnct)
