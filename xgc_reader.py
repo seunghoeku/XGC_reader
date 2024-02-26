@@ -162,7 +162,7 @@ class xgc1(object):
     """
     class datahlp(object):
         def __init__(self,filename,irg, read_rz_all=False):
-            with adios2.open(filename,"r") as self.f:
+            with adios2.open(filename,"rra") as self.f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
                 self.vars=self.f.available_variables()
@@ -338,13 +338,19 @@ class xgc1(object):
     """
     class databfm(object):
         def __init__(self):
-            with adios2.open("xgc.bfieldm.bp","r") as self.f:
+            with adios2.open("xgc.bfieldm.bp","rra") as self.f:
                 self.vars=self.f.available_variables()
-                v='/bfield/rvec'
+                if(hasattr(self.vars,'rmajor' )):
+                    v='rmajor'
+                else:
+                    v='/bfield/rvec' 
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
                 self.rmid=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
-                v='/bfield/psi_eq_x_psi'
+                if(hasattr(self.vars,'psi_n')):
+                    v='psi_n'
+                else:
+                    v='/bfield/psi_eq_x_psi'
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
                 self.psin=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
