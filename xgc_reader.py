@@ -136,7 +136,7 @@ class xgc1(object):
     """
     class data1(object):
         def __init__(self,filename):
-            with adios2.open(filename,"r") as self.f:
+            with adios2.open(filename,"rra") as self.f:
                 #read file and assign it
                 self.vars=self.f.available_variables()
                 for v in self.vars:
@@ -165,7 +165,7 @@ class xgc1(object):
     """
     class datahlp(object):
         def __init__(self,filename,irg, read_rz_all=False):
-            with adios2.open(filename,"r") as self.f:
+            with adios2.open(filename,"rra") as self.f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
                 self.vars=self.f.available_variables()
@@ -341,13 +341,19 @@ class xgc1(object):
     """
     class databfm(object):
         def __init__(self):
-            with adios2.open("xgc.bfieldm.bp","r") as self.f:
+            with adios2.open("xgc.bfieldm.bp","rra") as self.f:
                 self.vars=self.f.available_variables()
-                v='/bfield/rvec'
+                if(hasattr(self.vars,'rmajor' )):
+                    v='rmajor'
+                else:
+                    v='/bfield/rvec' 
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
                 self.rmid=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
-                v='/bfield/psi_eq_x_psi'
+                if(hasattr(self.vars,'psi_n')):
+                    v='psi_n'
+                else:
+                    v='/bfield/psi_eq_x_psi'
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
                 self.psin=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
@@ -519,7 +525,7 @@ class xgc1(object):
         mesh data class for 2D contour plot
         """
         def __init__(self):
-            with adios2.open("xgc.mesh.bp","r") as fm:
+            with adios2.open("xgc.mesh.bp","rra") as fm:
                 rz=fm.read('rz')
                 self.cnct=fm.read('nd_connect_list')
                 self.r=rz[:,0]
@@ -549,7 +555,7 @@ class xgc1(object):
         mesh data class for 2D contour plot
         """
         def __init__(self):
-            with adios2.open("xgc.f0.mesh.bp","r") as f:
+            with adios2.open("xgc.f0.mesh.bp","rra") as f:
                 T_ev=f.read('f0_T_ev')
                 den0=f.read('f0_den')
                 flow=f.read('f0_flow')
@@ -573,7 +579,7 @@ class xgc1(object):
     """
     class fluxavg(object):
         def __init__(self):
-            with adios2.open("xgc.fluxavg.bp","r") as f:
+            with adios2.open("xgc.fluxavg.bp","rra") as f:
                 eindex=f.read('eindex')
                 nelement=f.read('nelement')
                 self.npsi=f.read('npsi')
@@ -595,7 +601,7 @@ class xgc1(object):
         read volume data
         """
         def __init__(self):
-            with adios2.open("xgc.volumes.bp","r") as f:
+            with adios2.open("xgc.volumes.bp","rra") as f:
                 self.od=f.read("diag_1d_vol")
                 #try:
                 self.adj_eden=f.read("psn_adj_eden_vol")
@@ -623,7 +629,7 @@ class xgc1(object):
                 filename= "xgc.3d.%5.5d.bp" % (i)
 
                 #read data
-                with adios2.open(filename,"r") as f:
+                with adios2.open(filename,"rra") as f:
                     dpot=f.read("dpot")
                     dden=f.read("eden")
 
@@ -725,7 +731,7 @@ class xgc1(object):
         levels = kwargs.get('levels', None)
         cmap = kwargs.get('cmap', 'jet')
         
-        f=adios2.open(filestr,'r')
+        f=adios2.open(filestr,'rra')
         var=f.read(varstr)
         fig, ax=plt.subplots()
 
@@ -994,7 +1000,8 @@ class xgc1(object):
         ct= 0
         pbar = tqdm(range(istart,iend,skip))
         for i in pbar:
-            f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'r')
+            f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'rra')
+
             i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
             e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
             f.close()
@@ -1022,7 +1029,8 @@ class xgc1(object):
 
         #get nphi
         i=istart
-        f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+        f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
+
         dpot=f.read('dpot')
         f.close()
         nphi=np.shape(dpot)[0]
@@ -1031,7 +1039,7 @@ class xgc1(object):
         time=np.zeros(nt)
         pbar = tqdm(range(istart,iend+skip,skip))
         for i in pbar:
-            f=adios2.open('xgc.3d.%5.5d.bp' % (i),'r')
+            f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
             time1=f.read('time')
@@ -1254,7 +1262,8 @@ class xgc1(object):
     # read one variable from filestr -- for 3d and f3d files. 
     # it might work with other files, too.
     def read_one_ad2_var(self,filestr,varstr):
-        f=adios2.open(filestr,'r')
+        f=adios2.open(filestr,'rra')
+        #f.__next__()
         var=f.read(varstr)
         f.close()
         return var
