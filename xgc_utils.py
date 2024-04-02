@@ -10,6 +10,24 @@ def load_prf(filename):
     var = var[0:-1]
     return(psi,var)
 
+def load_prf2(filename):
+    with open(filename, 'r') as file:
+        #read dimensions
+        [n] = map(int, file.readline().strip().split())
+        #allocate array
+        psi=np.zeros(n)
+        var=np.zeros(n)
+
+        for l in range(n):
+            [psi[l], var[l]]=map(float, file.readline().strip().split() )
+
+        #read end flag
+        [end_flag]=map(int, file.readline().strip().split())
+        if(end_flag!=-1):
+            print('Error: end flag is not -1. end_flag= %d'%end_flag)
+        return(psi,var)
+
+
 def save_prf(x, y, fname):
     with open(fname, "w") as f:
         sz=np.size(x)        

@@ -343,14 +343,14 @@ class xgc1(object):
         def __init__(self):
             with adios2.open("xgc.bfieldm.bp","rra") as self.f:
                 self.vars=self.f.available_variables()
-                if(hasattr(self.vars,'rmajor' )):
+                if('rmajor' in self.vars):
                     v='rmajor'
                 else:
                     v='/bfield/rvec' 
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
                 self.rmid=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
-                if(hasattr(self.vars,'psi_n')):
+                if('psi_n' in self.vars):
                     v='psi_n'
                 else:
                     v='/bfield/psi_eq_x_psi'
