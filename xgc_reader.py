@@ -136,9 +136,9 @@ class xgc1(object):
     """
     class data1(object):
         def __init__(self,filename):
-            with adios2.open(filename,"rra") as self.f:
+            with adios2.open(filename,"rra") as f:
                 #read file and assign it
-                self.vars=self.f.available_variables()
+                self.vars=f.available_variables()
                 for v in self.vars:
                     stc=self.vars[v].get("AvailableStepsCount")
                     ct=self.vars[v].get("Shape")
@@ -146,9 +146,9 @@ class xgc1(object):
                     stc=int(stc)
                     if ct!='':
                         ct=int(ct)
-                        setattr(self,v,self.f.read(v,start=[0], count=[ct], step_start=0, step_count=stc))
+                        setattr(self,v,f.read(v,start=[0], count=[ct], step_start=0, step_count=stc))
                     elif v!='gsamples' and v!='samples' :
-                        setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
+                        setattr(self,v,f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
         def d_dpsi(self,var,psi):
             """
             radial derivative using psi_mks.
@@ -165,10 +165,10 @@ class xgc1(object):
     """
     class datahlp(object):
         def __init__(self,filename,irg, read_rz_all=False):
-            with adios2.open(filename,"rra") as self.f:
+            with adios2.open(filename,"rra") as f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
-                self.vars=self.f.available_variables()
+                self.vars=f.available_variables()
                 for v in self.vars:
                     stc=self.vars[v].get("AvailableStepsCount")
                     ct=self.vars[v].get("Shape")
@@ -177,15 +177,15 @@ class xgc1(object):
                     if ct!='':
                         c=[int(i) for i in ct.split(',')]  #
                         if len(c)==1 :  # time and step 
-                            setattr(self,v,self.f.read(v,start=[0], count=c, step_start=0, step_count=stc))
+                            setattr(self,v,f.read(v,start=[0], count=c, step_start=0, step_count=stc))
                         elif len(c)==2 : # c[0] is irg
-                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0], count=[1,c[1]], step_start=0, step_count=stc)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0], count=[1,c[1]], step_start=0, step_count=stc)))
                         elif ( len(c)==3 & read_rz_all ) : # ct[0] is irg, read only 
-                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
                         elif ( len(c)==3 ) : # read_rz_all is false. ct[0] is irg, read only 
-                            setattr(self,v,np.squeeze(self.f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc-1, step_count=1)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc-1, step_count=1)))
                     elif v!='zsamples' and v!='rsamples':
-                        setattr(self,v,self.f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
+                        setattr(self,v,f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
                 #keep last time step
                 self.r=self.r[-1,:]
                 self.z=self.z[-1,:]
@@ -341,22 +341,22 @@ class xgc1(object):
     """
     class databfm(object):
         def __init__(self):
-            with adios2.open("xgc.bfieldm.bp","rra") as self.f:
-                self.vars=self.f.available_variables()
+            with adios2.open("xgc.bfieldm.bp","rra") as f:
+                self.vars=f.available_variables()
                 if('rmajor' in self.vars):
                     v='rmajor'
                 else:
                     v='/bfield/rvec' 
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
-                self.rmid=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
+                self.rmid=f.read(v,start=[0],count=[c],step_start=0, step_count=1)
                 if('psi_n' in self.vars):
                     v='psi_n'
                 else:
                     v='/bfield/psi_eq_x_psi'
                 ct=self.vars[v].get("Shape")
                 c=int(ct)
-                self.psin=self.f.read(v,start=[0],count=[c],step_start=0, step_count=1)
+                self.psin=f.read(v,start=[0],count=[c],step_start=0, step_count=1)
 
 
     def load_heatdiag(self, **kwargs):
