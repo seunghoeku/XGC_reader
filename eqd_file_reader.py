@@ -64,16 +64,22 @@ class eqd(object):
             self.rgrid=np.linspace(self.min_r, self.max_r, num=self.mr)
             self.zgrid=np.linspace(self.min_z, self.max_z, num=self.mr)
 
+    #writing eqd file. It requires freeqdsk 
     def write_eqd(self,filename):
+        from freeqdsk._fileutils import write_array
         with open(filename, 'w') as file:
             self.header
             file.write(f"{self.header}")
-            file.write("%8d %8d %8d\n"%(self.mr,self.mz,self.mpsi))
-            file.write("%19.13e %19.13e %19.13e %19.13e\n"%(self.min_r,self.max_r,self.min_z, self.max_z))
-            file.write("%19.13e %19.13e %19.13e\n"%(self.axis_r,self.axis_z,self.axis_b))
-            file.write("%19.13e %19.13e %19.13e\n"%(self.x_psi,self.x_r,self.x_z))
-            file.write(' '.join(map(str, self.psi_grid)) + '\n')
-            file.write(' '.join(map(str, self.I)) + '\n')
+            f_fmt='4(e19.12,1x)'
+            write_array((self.mr,self.mz,self.mpsi),file,'3I8')
+            write_array((self.min_r,self.max_r,self.min_z,self.max_z),file,f_fmt)
+            write_array((self.axis_r,self.axis_z,self.axis_b),file,f_fmt)
+            write_array((self.x_psi,self.x_r,self.x_z),file,f_fmt)
+            write_array(self.psi_grid,file,f_fmt)
+            write_array(self.I,file,f_fmt)
+            write_array(self.psi_rz,file,f_fmt)
+            file.write('-1\n')
+            #limiter and separatrix information is ignored.
 
 
 
