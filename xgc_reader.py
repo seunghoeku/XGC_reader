@@ -428,7 +428,7 @@ class xgc1(object):
         Load xgc.bfield.bp -- equilibrium bfield 
     """
     def load_bfield(self):
-        with adios2.open("xgc.bfield.bp","r") as f:
+        with adios2.open("xgc.bfield.bp","rra") as f:
 
             self.bfield = f.read('node_data[0]/values')
             if(self.bfield.shape[0]==0):
@@ -660,6 +660,10 @@ class xgc1(object):
         self.vol=self.voldata()
 
     def heat_flux_all(self):
+        self.radial_flux_all()
+
+    # get radial flux of energy and particle from 1D data
+    def radial_flux_all(self):
         
         #load volume data
         if(not hasattr(self,"vol")):
