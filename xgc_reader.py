@@ -809,15 +809,12 @@ class xgc1(object):
         
 
     
-    def fsa_simple(self,var,**kwargs):
+    def fsa_simple(self,var):
         """
         simple flux surface average using mesh data
         self.meshdata should be called before
 
         var: variable to average 
-        plane: 0 based plane index - ignored for axisymmetric data
-        Improve it to handle box 
-        additional var to add: box, levels, cmap, etc
         """
         favg=np.zeros(self.mesh.psi_surf.size)
         for i in range(0,self.mesh.psi_surf.size):
@@ -825,9 +822,23 @@ class xgc1(object):
             s2=0
             for j in range(0,self.mesh.surf_len[i]):
                 idx=self.mesh.surf_idx[i,j] - 1
-                s1=s1+var[idx]*self.mesh.node_vol[i]
-                s2=s2+self.mesh.node_vol[i]
+                s1=s1+var[idx]*self.mesh.node_vol[idx]
+                s2=s2+self.mesh.node_vol[idx]
             favg[i]=s1/s2
+        return favg
+    
+    def flux_sum_simple(self,var):
+        """
+        simple summation over surface - not good when non-aligned points are nearby
+        self.meshdata should be called before
+        """
+        favg=np.zeros(self.mesh.psi_surf.size)
+        for i in range(0,self.mesh.psi_surf.size):
+            s1=0
+            for j in range(0,self.mesh.surf_len[i]):
+                idx=self.mesh.surf_idx[i,j] - 1
+                s1=s1+var[idx]
+            favg[i]=s1
         return favg
 
     def print_plasma_info(self):
@@ -1473,6 +1484,33 @@ class xgc1(object):
             dum = np.ascontiguousarray(dAs_phi_ff)
             fbp.write("dAs_phi_ff",dum, dum.shape, [0]*len(dum.shape), dum.shape)
             fbp.close()
+
+    #f-source 1D 
+    # sp = 'e_', 'i_', 'i2', 'i3', ...
+    # moments = 'density', 'energy', 'torque'
+    # source_type = 'collision', 'heat_torque', 'neutral', 'pellet', 'radiation', 'total', total2'
+    def source_simple(self, step, period, sp='i_', moments='energy', source_type='heat_torque'):
+
+        with adios2.open("xgc.fsourcediag.%5.5d.bp"%step,"rra") as f:
+            var=f.read(sp+moments+'_change_'+source_type)
+            den=f.read(sp+'density_' +source_type)
+            vol=f.read(sp+'volume_'  +source_type) 
+
+        dt=period * self.sml_dt
+        change_per_time=var*den*vol*self.sml_wedge_n/dt
+        var_1d = self.flux_sum_simple(change_per_time)
+        sum_1d = np.cumsum(var_1d)
+        print('Total change=',np.sum(change_per_time))
+        return var_1d, sum_1d
+    
+    def plot_source_simple(self, step, period, sp='i_', moments='energy', source_type='heat_torque'):
+
+        var_1d, sum_1d = self.source_simple(step, period, sp=sp, moments=moments, source_type= source_type)
+        plt.plot(self.od.psi,sum_1d)
+        plt.xlabel('Normalized Pol. Flux')
+        plt.title(sp+moments+'_'+source_type)
+        #ax.set(xlabel='Normalized Pol. Flux')
+
 
 '''
 def load_prf(filename):
