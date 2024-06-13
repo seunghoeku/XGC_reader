@@ -978,14 +978,25 @@ class xgc1(object):
         #plt.plot(psi_surf)
         msk=self.mesh.surf_idx[isurf,0:self.mesh.surf_len[isurf]] -1 #node index of the surface, -1 for zero base
         #plt.plot(x.mesh.r[msk],x.mesh.z[msk])
-        if(dir=='middle'):
-            tmp1=msk[-n:]
-            tmp2=msk[0:n]
-            ms=np.append(tmp1,tmp2)
-        elif(dir=='up'):
-            ms=msk[0:2*n]
+        #core mesh or SOL
+        if(self.mesh.psi_surf[isurf]<0.99999*self.psix):
+            #core below
+            if(dir=='middle'):
+                tmp1=msk[-n:]
+                tmp2=msk[0:n]
+                ms=np.append(tmp1,tmp2)
+            elif(dir=='up'):
+                ms=msk[0:2*n]
+            else:
+                ms=msk[-2*n:]
         else:
-            ms=msk[-2*n:]
+            #SOL below
+            #1. find segments low field side and abvoe X-point
+            msk2=np.nonzero( np.logical_and(self.mesh.r[msk]>self.eq_x_r,self.mesh.z[msk]>self.eq_x_z) )
+            msk3=msk[msk2]
+            imid=np.argmin(np.abs(self.mesh.z[msk3]-self.eq_axis_z))
+            ms=msk3[imid-n:imid+n]
+
         ax=plt.subplot()
         ax.plot(self.mesh.r[ms],self.mesh.z[ms],'.')
         ax.axis('equal')
