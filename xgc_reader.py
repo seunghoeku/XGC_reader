@@ -298,6 +298,39 @@ class xgc1(object):
 
             return popt, pconv
 
+
+        """
+            Functions for 3 lambda fit: lp (lambda_q of private flux region), ln (lambda_q of near SOL), lf (lambda_q of far SOL)
+            q(x) =     q0 * exp( (x-dsep)/lp)   when x<dsep
+                 =(q0-qf) * exp(-(x-dsep)/ln) + qf * exp(-(x-dsep)/lf) when x>dsep
+        """
+        def lambda_q3(self,x,q0,qf,lp,ln,lf,dsep):
+            
+            dsepl =0 # not using dsep --> dsepl=dsep to use
+            rtn = q0  * np.exp( (x-dsepl)/lp) # only x<dsep will be used.
+            ms=np.nonzero(x>=dsepl)
+            rtn[ms] = (q0-qf) * np.exp(-(x[ms]-dsepl)/ln) + qf * np.exp(-(x[ms]-dsepl)/lf)
+            return rtn
+
+        """
+            3 lambda_q fitting of one profile data
+        """
+        def lambda_q3_fit1(self,ydata,pmask):
+            q0init=np.max(ydata)
+            qfinit=0.01*q0init # 1 percent
+            lpinit=1 # 1mm
+            lninit=2 # 2mm
+            lfinit=4 # 4mm
+            dsepinit=0.01 # 0.01 mm
+
+            p0=np.array([q0init, qfinit, lpinit, lninit, lfinit, dsepinit])
+            if(pmask==None):
+                popt,pconv = curve_fit(self.lambda_q3,self.rmidsepmm,ydata,p0=p0)
+            else:
+                popt,pconv = curve_fit(self.lambda_q3,self.rmidsepmm[pmask],ydata[pmask],p0=p0)
+
+            return popt, pconv
+
         """
             Smoothing qt before Eich fit
         """
@@ -336,6 +369,25 @@ class xgc1(object):
                 self.lq_eich[i]= popt[2]
                 self.S_eich[i] = popt[1]
                 self.dsep_eich[i]= popt[3]
+        
+        def lambda_q3_fit_all(self,**kwargs):
+            pmask = kwargs.get('pmask', None)
+
+            self.lp_lq3=np.zeros_like(self.lq_int) #mem allocation
+            self.ln_lq3=np.zeros_like(self.lp_lq3)
+            self.lf_lq3=np.zeros_like(self.lp_lq3)
+            self.dsep_eich=np.zeros_like(self.lp_lq3)
+
+            for i in range(self.time.size):
+                try :
+                    popt,pconv = self.lambda_q3_fit1(self.qt[i,:],pmask)
+                except:
+                    popt=[0, 0, 0, 0, 0, 0]
+                
+                self.lp_lq3[i]= popt[2] 
+                self.ln_lq3[i] = popt[3] 
+                self.lf_lq3[i] = popt[4]
+                self.dsep_eich[i]= popt[5]
     """
         data for bfieldm
     """
