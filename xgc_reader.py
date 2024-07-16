@@ -1337,6 +1337,18 @@ class xgc1(object):
 
         return psi_mid, var_mid
 
+    #get GAM anlytic GAM frequency based on 1D diag and psi_surf
+    def gam_freq_analytic(self):
+        #finding region 1
+        psi_surf=self.mesh.psi_surf/self.psix
+        msk=np.nonzero(np.logical_and(psi_surf[:-1]<=1 , psi_surf[1:]>1))
+        m=slice(0,msk[0][0])
+
+        q = np.interp(self.od.psi, psi_surf[m], self.mesh.qsafety[m])
+        f = (1+1/(2*q*q)) * np.sqrt( self.cnst.echarge*(self.od.Te+self.od.Ti)/self.cnst.protmass/self.unit_dic['ptl_ion_mass_au'] )/ (2*np.pi* self.eq_axis_r)
+        return f
+
+
     # read one variable from filestr -- for 3d and f3d files. 
     # it might work with other files, too.
     def read_one_ad2_var(self,filestr,varstr):
