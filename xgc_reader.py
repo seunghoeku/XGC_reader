@@ -1166,10 +1166,23 @@ class xgc1(object):
         msep = self.mesh.surf_idx[isep,0:length]-1
         return msep
 
-    def show_sep(self,ax):
+    def show_sep(self,ax, style='-'):
         msep=self.find_sep_idx()
-        ax.plot(self.mesh.r[msep],self.mesh.z[msep],label='Separatrix')
+        ax.plot(self.mesh.r[msep],self.mesh.z[msep],style,label='Separatrix')
 
+
+    def find_surf_idx(self, psi_norm=1.0):
+        isep0 = np.argmin(abs(self.mesh.psi_surf-self.psix))
+        if(psi_norm<1.0):
+            psi_surf=self.mesh.psi_surf[:isep0]
+        else:
+            psi_surf=self.mesh.psi_surf
+        isep = np.argmin(abs(psi_surf-self.psix*psi_norm))
+
+        length=self.mesh.surf_len[isep]
+        msep = self.mesh.surf_idx[isep,0:length]-1
+        return msep
+    
     '''
     Basic analysis
     '''
@@ -1323,11 +1336,14 @@ class xgc1(object):
 
     # midplane value interpolation
     # need array operation if var has toroidal angle
-    def midplane_var(self, var):
+    def midplane_var(self, var, inboard=False, nr=300):
         maxr = self.mesh.r.max()
-        nr = 300
+        minr = self.mesh.r.min()
 
-        r_mid = np.linspace(self.eq_axis_r, maxr, nr)
+        if(inboard):
+            r_mid = np.linspace(minr, self.eq_axis_r, nr)
+        else:
+            r_mid = np.linspace(self.eq_axis_r, maxr, nr)
         z_mid = np.linspace(self.eq_axis_z, self.eq_axis_z, nr)
         psi_tri = LinearTriInterpolator(self.mesh.triobj,self.mesh.psi/self.psix)
         psi_mid = psi_tri(r_mid, z_mid )
