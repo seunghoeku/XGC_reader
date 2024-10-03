@@ -128,7 +128,11 @@ class xgc1(object):
         for i in idx:
             tmp=np.argwhere(self.od.step==i*d)
             #self.od.tmask[i-st/d]=tmp[-1,-1]   #LFS zero based, RHS last element
-            self.od.tmask[i-st]=tmp[-1,-1]   #LFS zero based, RHS last element
+            try: 
+                self.od.tmask[i-st]=tmp[-1,-1]   #LFS zero based, RHS last element
+            except:
+                print ('failed to find tmaks', tmp)
+
 
     """ 
         class for reading data file like xgc.oneddiag.bp
