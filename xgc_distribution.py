@@ -186,8 +186,7 @@ class XGCDistribution:
 
 
 
-    def save(self, filename):
-        filename="xgc.f_init.bp"
+    def save(self, filename="xgc.f_init.bp"):
         with adios2.open(filename, mode='w') as fw:
             adios2_write_array(fw, "f_g", self.f)
             adios2_write_array(fw, "density", self.den)
@@ -199,21 +198,25 @@ class XGCDistribution:
                 has_maxwellian = 1
             else:
                 has_maxwellian = 0
-            fw.write("has_maxwellian", np.array([has_maxwellian]))
-            fw.write("nvpara", np.array([self.vgrid.nvpara]))
-            fw.write("nvperp", np.array([self.vgrid.nvperp]))
-            fw.write("vpara_max", np.array([self.vgrid.vpara_max]))
-            fw.write("vperp_max", np.array([self.vgrid.vperp_max]))
-            fw.write("nnodes", np.array([self.nnodes]))
+            fw.write("has_maxwellian", np.array([has_maxwellian], dtype=np.int32))
+            fw.write("nvpara", np.array([self.vgrid.nvpara], dtype=np.int32))
+            fw.write("nvperp", np.array([self.vgrid.nvperp], dtype=np.int32))
+            fw.write("vpara_max", np.array([self.vgrid.vpara_max], dtype=np.float64))
+            fw.write("vperp_max", np.array([self.vgrid.vperp_max], dtype=np.float64))
+            fw.write("nnodes", np.array([self.nnodes], dtype=np.int32))
 
 
+
+# interpolate flux surface moments to mesh
+def interp_flux_surface_moments(psi_surf, moments_surf, x):
+    var_mesh = np.interp(x.mesh.psi, psi_surf, moments_surf)  # region 3 need to ba handled separately
+    return var_mesh
 
 #flux surface average using xgc_reader data and scatter back to the mesh
 # private region need to be implemented.
 def flux_surface_average(var, x):
-    fsa_surf = x.fsa_simple(var)
-    
-    var_favg = np.interp(x.mesh.psi, x.mesh.psi_surf, fsa_surf) # region 3 need to be handled separately
+    fsa_surf = x.fsa_simple(var)    
+    var_favg = interp_flux_surface_moments(x.mesh.psi_surf, fsa_surf, x)
     return (var_favg)
 
         
