@@ -1,43 +1,40 @@
+
 from typing import *
-"""
-This module provides classes and functions for handling velocity grids and XGC distribution data.
-Classes:
-    VelocityGrid: Represents a velocity grid with parallel and perpendicular velocity components.
-    XGCDistribution: Represents the XGC distribution data and provides methods for initialization, updating, and removing Maxwellian components.
-Functions:
-    flux_surface_average(var, x): Computes the flux surface average using xgc_reader data and scatters back to the mesh.
-    adios2_write_array(file, name, data): Writes an array to an ADIOS2 file.
-Classes:
-    VelocityGrid:
-        __init__(self, nvpara: int, nvperp: int, vpara_max: float, vperp_max: float):
-            Initializes the VelocityGrid with the given parameters.
-    XGCDistribution:
-        __init__(self, vgrid: 'VelocityGrid', nnodes: int):
-            Initializes the XGCDistribution with the given velocity grid and number of nodes.
-        __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, has_maxwellian=True):
-            Initializes the XGCDistribution with the given parameters and data arrays.
-        __init__(self, filename, dir='./', var_string='i_f', time_step=0, mass_au=2.0):
-            Initializes the XGCDistribution from an ADIOS2 file.
-        update_maxwellian(self, x):
-            Updates the Maxwellian distribution function.
-        remove_maxwellian(self, get=False, remove=True):
-            Removes or retrieves the Maxwellian component from the distribution function.
-        fix_axis_value(self, var, sz=10):
-            Fixes the axis value by averaging the first few elements.
-        save_f(filename, array_dict, engine_type="BP4"):
-            Saves the given arrays to a file using ADIOS2.
-Functions:
-    flux_surface_average(var, x):
-        Computes the flux surface average using xgc_reader data and scatters back to the mesh.
-    adios2_write_array(file, name, data):
-        Writes an array to an ADIOS2 file.
-"""
 import xgc_reader
 import numpy as np
 import adios2
 
 
 class VelocityGrid:
+    """
+    A class to represent a velocity grid for a distribution function.
+
+    Attributes
+    ----------
+    nvperp : int
+        Number of perpendicular velocity points.
+    nvpara : int
+        Number of parallel velocity points in one direction.
+    nvpdata : int
+        Number of parallel velocity data points (2 * nvpara + 1).
+    vpara : numpy.ndarray
+        Array of parallel velocities ranging from -vpara_max to vpara_max.
+    vperp : numpy.ndarray
+        Array of perpendicular velocities ranging from 0 to vperp_max.
+    dvperp : float
+        Increment in perpendicular velocity.
+    dvpara : float
+        Increment in parallel velocity.
+    vpara_max : float
+        Maximum parallel velocity.
+    vperp_max : float
+        Maximum perpendicular velocity.
+
+    Methods
+    -------
+    __init__(nvperp: int, nvpara: int, vperp_max: float, vpara_max: float)
+        Initializes the velocity grid with given parameters.
+    """
 
     def __init__(self, nvperp: int, nvpara: int,
                  vperp_max: float, vpara_max: float):
@@ -55,6 +52,41 @@ class VelocityGrid:
         self.vperp_max = vperp_max
         
 class XGCDistribution:
+    """
+    A class to represent the XGC distribution.
+    Attributes
+    ----------
+    PROTON_MASS : float
+        Mass of a proton in kilograms.
+    E_CHARGE : float
+        Elementary charge in coulombs.
+    EV_TO_JOULE : float
+        Conversion factor from electron volts to joules.
+    MU0_FACTOR : float
+        Factor applied at zero perpendicular velocity.
+    Methods
+    -------
+    __init__(vgrid, nnodes, f, den, temp_ev, flow, fg_temp_ev, mass, has_maxwellian=True)
+        Initializes the XGCDistribution object with given parameters.
+    from_xgc_output(cls, filename, var_string='i_f', dir='./', time_step=0, mass_au=2.0)
+        Class method to initialize the object from an XGC output file.
+    from_xgc_input(cls, filename)
+        Class method to initialize the object from an XGC input file.
+    update_maxwellian_moments(self, x)
+        Updates the moments of the Maxwellian distribution function.
+    remove_maxwellian(self, get=False, add=False)
+        Removes or adds the Maxwellian component from/to the distribution function.
+    add_maxwellian(self)
+        Adds the Maxwellian component to the distribution function.
+    get_maxwellian(self)
+        Returns the Maxwellian component of the distribution function.
+    fix_axis_value(self, var, sz=10)
+        Fixes the axis value by averaging the first few elements.
+    save(self, filename="xgc.f_init.bp")
+        Saves the distribution function and related data to a file.
+    zero_out_fg(self)
+        Zeros out the fg component of the distribution function.
+    """
     # Class constants
     PROTON_MASS: ClassVar[float] = 1.6726219e-27
     E_CHARGE: ClassVar[float] = 1.602176634e-19
@@ -143,24 +175,22 @@ class XGCDistribution:
         ptls = np.sum(self.f, axis=(1, 2))
         print(np.shape(ptls))
         den = ptls * vspace_vol
+        self.den = flux_surface_average(den, x)
 
         # flow
         flow = np.sum(self.f * self.vgrid.vpara[np.newaxis, np.newaxis, :], axis=(1, 2))
         print(np.shape(flow))
         flow = flow/ ptls * np.sqrt(self.fg_temp_ev * self.EV_TO_JOULE/ self.mass) 
+        self.flow = flux_surface_average(flow/x.mesh.r, x)*x.mesh.r # u/R (parallel rotation freq) flux average
 
         # temperature
-        en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2
-        
-        temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3
+        en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2        
+        temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3 # mean enrgy 2/3
+        temp = temp - 0.5 * self.flow**2 * self.mass/self.EV_TO_JOULE # moving frame
+        self.temp_ev = flux_surface_average(temp, x) 
 
         # undo multiplication by MU0_FACTOR
         self.f[:,0,:] = self.f[:,0,:] / self.MU0_FACTOR
-
-        # flox surface average
-        self.den = flux_surface_average(den, x)
-        self.flow = flux_surface_average(flow/x.mesh.r, x)*x.mesh.r # u/R (parallel rotation freq) flux average
-        self.temp_ev = flux_surface_average(temp, x) - 0.5 * self.flow**2 * self.mass/self.EV_TO_JOULE
 
 
 
@@ -247,6 +277,39 @@ class XGCDistribution:
         self.f_g = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
         self.has_maxwellian = False
 
+    def canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction):
+        fcm = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
+
+        bmag = np.sqrt(x.bfield[0,:]**2 + x.bfield[1,:]**2 + x.bfield[2,:]**2)
+        q_m = self.E_CHARGE/self.mass
+        #actual calculation
+        for i in range(self.vgrid.nvperp):
+            for j in range(self.vgrid.nvpdata):
+                v_n = np.sqrt(self.fg_temp_ev*q_m)
+                vpara = self.vgrid.vpara[j]*v_n # no flow
+                vperp = self.vgrid.vperp[i]*v_n
+                en =0.5* self.mass * (vpara**2 + vperp**2) 
+                psi_c = x.mesh.psi + q_m * x.bfield[2,:]/bmag * vpara
+                mu = 0.5 * self.mass * vperp**2 / bmag
+                if(correction):
+                    h = en - mu * x.eq_axis_b
+                    h = np.maximum(h,0.0) # hevyside function multiplied.
+                    psi_c = psi_c - np.sign(vpara)* q_m * x.eq_axis_r * np.sqrt(2*h)
+                
+                den = np.interp(psi_c, psi_den, den_c)
+                temp_ev = np.interp(psi_c, psi_temp, temp_ev_c)
+                en = en/ (temp_ev*self.EV_TO_JOULE) # normalized energy by T
+                fcm[:,i,j] = den * np.exp(-en) / (temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+        return fcm
+
+    def set_canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction=True):
+        if(not self.has_maxwellian):
+            delattr(self,'f_g')
+        self.f = self.canonical_maxwellian(x, psi_den, den_c, psi_temp, temp_ev_c, correction)
+        self.has_maxwellian = True
+        self.update_maxwellian_moments(x)
+
+
 # interpolate flux surface moments to mesh
 def interp_flux_surface_moments(psi_surf, moments_surf, x):
     var_mesh = np.interp(x.mesh.psi, psi_surf, moments_surf)  # region 3 need to ba handled separately
@@ -279,3 +342,31 @@ def adios2_write_array(file, name, data):
         
     file.write(name, np.ascontiguousarray(data), data.shape, start=start, count=count)
 
+
+# Convert distribution to another mesh
+# The basic algorithm is that interpolate the normalized distribution function to the new mesh.
+# This approach could cause some issues when the normalization factor (fg_temp_ev) is varying a lot.
+# Algorithm:
+# for each velocity node point
+#  0. Assume that nvperp, nvpara, vperp_max, vpara_max are same for the new mesh.
+#  1. interpolate the normalization factor to the new mesh.
+#  2. interpolate the distribution function to the new mesh.
+def convert_distribution(dist, x, x_new):
+    # 0. copy the VelocityGrid object
+
+    # 0.1 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
+
+
+
+    # 1. interpolate fg_temp_ev to the new mesh
+
+
+
+    # 2. interpolate the distribution function to the new mesh
+    # 2.1 add maxwellian
+    # 2.2 interpolate dist.f to dist_new.f
+    # 2.3 update moments
+    # 2.4 remove maxwellian from dist_new.f
+
+
+    return dist_new
