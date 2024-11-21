@@ -3,7 +3,7 @@ from typing import *
 import xgc_reader
 import numpy as np
 import adios2
-
+import matplotlib.pyplot as plt
 
 class VelocityGrid:
     """
@@ -94,7 +94,7 @@ class XGCDistribution:
     MU0_FACTOR: ClassVar[float] = 1/3
     
     #initialize from data passing
-    def __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, has_maxwellian=True) -> None:
+    def __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, charge: float, has_maxwellian=True) -> None:
         self.vgrid = vgrid
         self.nnodes = nnodes
         self.den = den
@@ -102,6 +102,7 @@ class XGCDistribution:
         self.flow = flow
         self.fg_temp_ev = fg_temp_ev
         self.mass = mass
+        self.charge = charge
         self.has_maxwellian = has_maxwellian
         if(has_maxwellian):
             self.f = f
@@ -110,7 +111,7 @@ class XGCDistribution:
 
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
-    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0):
+    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0):
         with adios2.open(filename,"rra") as file:
             it=time_step
             ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
@@ -132,13 +133,14 @@ class XGCDistribution:
             fg_temp_ev = file.read('f0_fg_T_ev')[0,:]  # need species index handling
 
         mass = mass_au * cls.PROTON_MASS
+        charge = charge_num * cls.E_CHARGE
 
         # Initialize other arrays with zeros or appropriate values
         den = np.zeros(nnodes)
         temp_ev = np.zeros(nnodes)
         flow = np.zeros(nnodes)
 
-        return cls(vgrid, nnodes, ftmp, den, temp_ev, flow, fg_temp_ev, mass, has_maxwellian=True)
+        return cls(vgrid, nnodes, ftmp, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=True)
 
     #initialize from distribution input file -- same format as that of save()
     @classmethod
@@ -150,10 +152,11 @@ class XGCDistribution:
             flow = fr.read("flow")
             fg_temp_ev = fr.read("fg_temp_ev")
             mass = fr.read("mass")
+            charge = fr.read("charge")
             vgrid = VelocityGrid(fr.read("nvperp"), fr.read("nvpara"), fr.read("vperp_max"), fr.read("vpara_max"))
             nnodes = fr.read("nnodes")
 
-        return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, has_maxwellian=False)
+        return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False)
 
 
     # update maxwellian distribution function
@@ -173,13 +176,11 @@ class XGCDistribution:
 
         # particle density
         ptls = np.sum(self.f, axis=(1, 2))
-        print(np.shape(ptls))
         den = ptls * vspace_vol
         self.den = flux_surface_average(den, x)
 
         # flow
         flow = np.sum(self.f * self.vgrid.vpara[np.newaxis, np.newaxis, :], axis=(1, 2))
-        print(np.shape(flow))
         flow = flow/ ptls * np.sqrt(self.fg_temp_ev * self.EV_TO_JOULE/ self.mass) 
         self.flow = flux_surface_average(flow/x.mesh.r, x)*x.mesh.r # u/R (parallel rotation freq) flux average
 
@@ -264,6 +265,7 @@ class XGCDistribution:
             adios2_write_array(fw, "flow", self.flow)
             adios2_write_array(fw, "fg_temp_ev", self.fg_temp_ev)
             fw.write("mass", np.array([self.mass]))
+            fw.write("charge", np.array([self.charge]))
 
             fw.write("nvpara", np.array([self.vgrid.nvpara], dtype=np.int32))
             fw.write("nvperp", np.array([self.vgrid.nvperp], dtype=np.int32))
@@ -282,6 +284,7 @@ class XGCDistribution:
 
         bmag = np.sqrt(x.bfield[0,:]**2 + x.bfield[1,:]**2 + x.bfield[2,:]**2)
         q_m = self.E_CHARGE/self.mass
+        m_q = 1/q_m
         #actual calculation
         for i in range(self.vgrid.nvperp):
             for j in range(self.vgrid.nvpdata):
@@ -289,12 +292,12 @@ class XGCDistribution:
                 vpara = self.vgrid.vpara[j]*v_n # no flow
                 vperp = self.vgrid.vperp[i]*v_n
                 en =0.5* self.mass * (vpara**2 + vperp**2) 
-                psi_c = x.mesh.psi + q_m * x.bfield[2,:]/bmag * vpara
+                psi_c = x.mesh.psi + m_q * x.mesh.r * x.bfield[2,:]/bmag * vpara
                 mu = 0.5 * self.mass * vperp**2 / bmag
                 if(correction):
                     h = en - mu * x.eq_axis_b
                     h = np.maximum(h,0.0) # hevyside function multiplied.
-                    psi_c = psi_c - np.sign(vpara)* q_m * x.eq_axis_r * np.sqrt(2*h)
+                    psi_c = psi_c - np.sign(vpara)* m_q * x.eq_axis_r * np.sqrt(2*h/self.mass)
                 
                 den = np.interp(psi_c, psi_den, den_c)
                 temp_ev = np.interp(psi_c, psi_temp, temp_ev_c)
@@ -302,12 +305,91 @@ class XGCDistribution:
                 fcm[:,i,j] = den * np.exp(-en) / (temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
         return fcm
 
+    def resize(self) -> None:
+        self.vgrid = VelocityGrid(self.vgrid.nvperp, self.vgrid.nvpara, self.vgrid.vperp_max, self.vgrid.vpara_max)
+
+        self.den = np.zeros(self.nnodes)
+        self.temp_ev = np.zeros(self.nnodes)
+        self.flow = np.zeros(self.nnodes)
+        self.fg_temp_ev = np.zeros(self.nnodes)
+        if(self.has_maxwellian):
+            self.f = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
+        else:
+            self.f_g = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
+
+    # Get the canonical maxwellian distribution function iteratively to match the moments
+    # psi_den and psi_temp are unnormlized psi values
+    def set_canonical_maxwellian_iterative(self, x, psi_den, den_target_in, psi_temp, temp_ev_target_in, correction=True, tol=1e-2, max_iter=30, show_fig=False):
+
+        # interpolate the target moments to oned psi 
+        psi = x.od.psi*x.psix
+        den_target=np.interp(psi, psi_den, den_target_in)
+        temp_ev_target=np.interp(psi, psi_temp, temp_ev_target_in)
+
+        den_c = den_target.copy()
+        temp_ev_c = temp_ev_target.copy()
+        den_norm = np.sqrt(np.mean(den_target**2))
+        temp_ev_norm = np.sqrt(np.mean(temp_ev_target**2))
+        
+        if(show_fig):
+            fig, ax = plt.subplots(2,2)
+            ax[0,0].plot(psi/x.psix, den_target, label='target')
+            ax[0,1].plot(psi/x.psix, temp_ev_target, label='target')
+
+        for iter in range(max_iter):
+            self.set_canonical_maxwellian(x, psi, den_c, psi , temp_ev_c, correction)
+            
+            # get the difference between the target and the calculated moments
+            den_diff = den_target - np.interp(psi, x.mesh.psi_surf, x.fsa_simple(self.den))
+            temp_ev_diff = temp_ev_target - np.interp(psi, x.mesh.psi_surf, x.fsa_simple(self.temp_ev))
+            error_den = np.sqrt(np.mean(den_diff**2))/den_norm 
+            error_temp = np.sqrt(np.mean(temp_ev_diff**2))/temp_ev_norm
+            error = np.sqrt(error_den**2 + error_temp**2)            
+            print('Iter:', iter, 'Error:', error, 'Error_den:', error_den, 'Error_temp:', error_temp)
+            if(error < tol):
+                break
+
+            # update the canonical maxwellian moments
+            if(error_den > error_temp):
+                den_c = den_c + den_diff
+            else:
+                temp_ev_c = temp_ev_c + temp_ev_diff
+            
+            if(show_fig):
+                ax[1,0].plot(psi/x.psix, den_c, label='iter'+str(iter))                
+                ax[1,1].plot(psi/x.psix, temp_ev_c, label='iter'+str(iter))
+                ax[0,0].plot(x.mesh.psi/x.psix, self.den, label='iter'+str(iter))
+                ax[0,1].plot(x.mesh.psi/x.psix, self.temp_ev, label='iter'+str(iter))
+
+        if(show_fig):
+            ax[0,0].set_title('Density local')
+            ax[0,1].set_title('Temperature local')
+            ax[1,0].set_title('Density canonical')
+            ax[1,1].set_title('Temperature canonical')
+            ax[0,0].legend()
+            ax[0,1].legend()
+            ax[1,0].legend()
+            ax[1,1].legend()
+            plt.show()
+
+
+
+    # psi_den and psi_temp are unnormlized psi values
     def set_canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction=True):
         if(not self.has_maxwellian):
             delattr(self,'f_g')
         self.f = self.canonical_maxwellian(x, psi_den, den_c, psi_temp, temp_ev_c, correction)
         self.has_maxwellian = True
         self.update_maxwellian_moments(x)
+
+    # contour plot at the given node
+    def contour_plot(self, nnode):
+        if(self.has_maxwellian):
+            f=self.f
+        else:
+            f=self.f_g
+
+        plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
 
 
 # interpolate flux surface moments to mesh
@@ -352,21 +434,33 @@ def adios2_write_array(file, name, data):
 #  1. interpolate the normalization factor to the new mesh.
 #  2. interpolate the distribution function to the new mesh.
 def convert_distribution(dist, x, x_new):
+    
     # 0. copy the VelocityGrid object
+    import copy
+    import matplotlib.tri as tri  
+    dist_new=copy.deepcopy(dist)
 
     # 0.1 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
-
-
+    dist_new.nnodes = x_new.mesh.nnode
+    dist_new.resize()
 
     # 1. interpolate fg_temp_ev to the new mesh
-
-
+    interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.fg_temp_ev)
+    dist_new.fg_temp_ev = interpolator(x_new.mesh.x, x_new.mesh.y)
 
     # 2. interpolate the distribution function to the new mesh
     # 2.1 add maxwellian
-    # 2.2 interpolate dist.f to dist_new.f
-    # 2.3 update moments
-    # 2.4 remove maxwellian from dist_new.f
+    dist.add_maxwellian()
 
+    # 2.2 interpolate dist.f to dist_new.f
+    for i in range(dist.vgrid.nvperp):
+        for j in range(dist.vgrid.nvpdata):
+            interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.f[:,i,j])
+            dist_new.f[:,i,j] = interpolator(x_new.mesh.x, x_new.mesh.y)
+    # 2.3 update moments
+    dist_new.update_maxwellian_moments(x_new)
+
+    # 2.4 remove maxwellian from dist_new.f
+    dist_new.remove_maxwellian()
 
     return dist_new
