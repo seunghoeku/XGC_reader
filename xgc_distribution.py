@@ -111,13 +111,15 @@ class XGCDistribution:
 
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
-    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0):
-        with adios2.open(filename,"rra") as file:
+    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True):
+        with adios2.open(dir+'/'+filename,"rra") as file:
             it=time_step
             ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
+            print('Reading data with shape:',np.shape(ftmp))
             step=file.read('step',start=[],count=[],step_start=it, step_count=1)
             ftmp = np.squeeze(ftmp) # remove time step dimension
-            ftmp = np.mean(ftmp,axis=0) # toroidal average
+            if(ftmp.ndim == 4):
+                ftmp = np.mean(ftmp,axis=0) # toroidal average
             ftmp = np.swapaxes(ftmp, 0, 1)
             print('Loading '+var_string + ' from '+ filename+ '. The toroidal averaged distribution has dim of', np.shape(ftmp))
             nvperp = ftmp.shape[1]
@@ -130,7 +132,22 @@ class XGCDistribution:
             vgrid = VelocityGrid(nvperp, nvpara, smu_max, vp_max)
             
             # read the specific species.
-            fg_temp_ev = file.read('f0_fg_T_ev')[0,:]  # need species index handling
+            if(var_string=='e_f'):
+                idx = 0
+            elif(var_string=='i_f'):
+                idx = 1
+            else:
+                if var_string.startswith('i'):
+                    idx = int(var_string[1]) if var_string[1].isdigit() else 0
+                else:
+                    raise ValueError(f"Unsupported var_string: {var_string}") 
+            if(not has_electron):
+                idx = idx-1
+            t_tmp = file.read('f0_fg_T_ev')
+            if(t_tmp.ndim != 2):
+                t_tmp = file.read('f0_T_ev') # for old version
+
+            fg_temp_ev = t_tmp[idx,:]  # need species index handling
 
         mass = mass_au * cls.PROTON_MASS
         charge = charge_num * cls.E_CHARGE
@@ -194,7 +211,7 @@ class XGCDistribution:
         self.f[:,0,:] = self.f[:,0,:] / self.MU0_FACTOR
 
 
-
+    # add or remove maxwellian to f_g or from f
     def remove_maxwellian(self, get=False, add=False):        
         if(get):
             fm = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
@@ -241,18 +258,16 @@ class XGCDistribution:
             self.f = self.f_g
             delattr(self,'f_g')
 
+    # adding maxwellian to f_g and rename it to f. simple interface to remove maxwellian
     def add_maxwellian(self):
         self.remove_maxwellian(add=True)
 
+    # get maxwellian component. It does not change the distribution data
     def get_maxwellian(self):
         return self.remove_maxwellian(get=True)
 
-    def fix_axis_value(self,var, sz=10):
-        sz2 = np.min([sz, var.shape[0]])
-        var[0]=np.mean(var[1:sz2])
 
-
-
+    # save data structure to adios2 file
     def save(self, filename="xgc.f_init.bp"):
         #when writing to file, remove maxwellian component
         if(self.has_maxwellian):
@@ -273,12 +288,15 @@ class XGCDistribution:
             fw.write("vperp_max", np.array([self.vgrid.vperp_max], dtype=np.float64))
             fw.write("nnodes", np.array([self.nnodes], dtype=np.int32))
 
+    # zero out f_g 
     def zero_out_fg(self):
         if(self.has_maxwellian):
             delattr(self,'f')
         self.f_g = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
         self.has_maxwellian = False
 
+    # setup canonical maxwellian
+    # correction is to correct the psi_c value for being close to psi
     def canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction):
         fcm = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
 
@@ -305,6 +323,7 @@ class XGCDistribution:
                 fcm[:,i,j] = den * np.exp(-en) / (temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
         return fcm
 
+    # resize the distribution function with new # of nodes.
     def resize(self) -> None:
         self.vgrid = VelocityGrid(self.vgrid.nvperp, self.vgrid.nvpara, self.vgrid.vperp_max, self.vgrid.vpara_max)
 

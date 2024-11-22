@@ -25,11 +25,12 @@ class xgc1(object):
         mu0 = 4 * 3.141592 * 1E-7
 
         
-    def __init__(self):
+    def __init__(self, path='./'):
         """ 
         initialize it from the current directory.
         not doing much thing. 
-        """        
+        """ 
+        os.chdir(path)
         self.path=os.getcwd()+'/'
     
 
@@ -56,7 +57,7 @@ class xgc1(object):
         """
         load xgc.oneddiag.bp and some post process
         """
-        self.od=self.data1("xgc.oneddiag.bp") #actual reading routine
+        self.od=self.data1(self.path+"xgc.oneddiag.bp") #actual reading routine
         self.od.psi=self.od.psi[0,:]
         self.od.psi00=self.od.psi00[0,:]
         try:
@@ -396,8 +397,8 @@ class xgc1(object):
         data for bfieldm
     """
     class databfm(object):
-        def __init__(self):
-            with adios2.open("xgc.bfieldm.bp","rra") as f:
+        def __init__(self,path):
+            with adios2.open(path+"xgc.bfieldm.bp","rra") as f:
                 self.vars=f.available_variables()
                 if('rmajor' in self.vars):
                     v='rmajor'
@@ -422,8 +423,8 @@ class xgc1(object):
         read_rz_all = kwargs.get('read_rz_all',False) #read heat load in RZ
 
         self.hl=[]
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",0,read_rz_all) ) #actual reading routine
-        self.hl.append( self.datahlp("xgc.heatdiag.bp",1,read_rz_all) )#actual reading routine
+        self.hl.append( self.datahlp(self.path+"xgc.heatdiag.bp",0,read_rz_all) ) #actual reading routine
+        self.hl.append( self.datahlp(self.path+"xgc.heatdiag.bp",1,read_rz_all) )#actual reading routine
 
         for i in [0,1] :
             try: 
@@ -484,7 +485,7 @@ class xgc1(object):
         Load xgc.bfield.bp -- equilibrium bfield 
     """
     def load_bfield(self):
-        with adios2.open("xgc.bfield.bp","rra") as f:
+        with adios2.open(self.path+"xgc.bfield.bp","rra") as f:
 
             self.bfield = f.read('node_data[0]/values')
             if(self.bfield.shape[0]==0):
@@ -562,7 +563,7 @@ class xgc1(object):
     setup self.mesh
     """
     def setup_mesh(self):
-        self.mesh=self.meshdata()
+        self.mesh=self.meshdata(self.path)
 
         #setup separatrix
         self.mesh.isep = np.argmin(abs(self.mesh.psi_surf-self.psix))
@@ -574,14 +575,14 @@ class xgc1(object):
     setup f0mesh
     """ 
     def setup_f0mesh(self):
-       self.f0=self.f0meshdata()
+       self.f0=self.f0meshdata(self.path)
 
     class meshdata(object):    
         """
         mesh data class for 2D contour plot
         """
-        def __init__(self):
-            with adios2.open("xgc.mesh.bp","rra") as fm:
+        def __init__(self,path):
+            with adios2.open(path+"xgc.mesh.bp","rra") as fm:
                 rz=fm.read('rz')
                 self.cnct=fm.read('nd_connect_list')
                 self.r=rz[:,0]
@@ -610,8 +611,8 @@ class xgc1(object):
         """
         mesh data class for 2D contour plot
         """
-        def __init__(self):
-            with adios2.open("xgc.f0.mesh.bp","rra") as f:
+        def __init__(self,path):
+            with adios2.open(path+"xgc.f0.mesh.bp","rra") as f:
                 T_ev=f.read('f0_T_ev')
                 den0=f.read('f0_den')
                 flow=f.read('f0_flow')
@@ -634,8 +635,8 @@ class xgc1(object):
     Not completed. Use fsa_simple
     """
     class fluxavg(object):
-        def __init__(self):
-            with adios2.open("xgc.fluxavg.bp","rra") as f:
+        def __init__(self,path):
+            with adios2.open(path + "xgc.fluxavg.bp","rra") as f:
                 eindex=f.read('eindex')
                 nelement=f.read('nelement')
                 self.npsi=f.read('npsi')
@@ -656,8 +657,8 @@ class xgc1(object):
         """
         read volume data
         """
-        def __init__(self):
-            with adios2.open("xgc.volumes.bp","rra") as f:
+        def __init__(self,path):
+            with adios2.open(path+"xgc.volumes.bp","rra") as f:
                 self.od=f.read("diag_1d_vol")
                 #try:
                 self.adj_eden=f.read("psn_adj_eden_vol")
@@ -713,7 +714,7 @@ class xgc1(object):
         """
         setup self.vol
         """
-        self.vol=self.voldata()
+        self.vol=self.voldata(self.path)
 
     def heat_flux_all(self):
         self.radial_flux_all()
@@ -723,7 +724,7 @@ class xgc1(object):
         
         #load volume data
         if(not hasattr(self,"vol")):
-            self.vol=self.voldata()
+            self.vol=self.voldata(self.path)
         
         #check reading oneddiag?
         
@@ -1399,12 +1400,12 @@ class xgc1(object):
             return spmat
 
 
-    class grad_rz(xgc_mat):    
+    class grad_rz(xgc_mat):
         """
         gradient operation
         """
-        def __init__(self):
-            with adios2.open("xgc.grad_rz.bp","r") as f:
+        def __init__(self,path):
+            with adios2.open(path+"xgc.grad_rz.bp","r") as f:
                 try:
                     # Flag indicating whether gradient is (R,Z) or (psi,theta)
                     self.mat_basis = f.read('basis')
@@ -1431,11 +1432,11 @@ class xgc1(object):
                     self.mat_basis   = 0
 
     def load_grad_rz(self):
-        self.grad = self.grad_rz()
+        self.grad = self.grad_rz(self.path) # need to fix
 
     "ff_mappings"
     class ff_mapping(xgc_mat):
-        def __init__(self,ff_name):
+        def __init__(self,ff_name,path):
                 fn       ='xgc.ff_'+ff_name+'.bp'
                 with adios2.open(fn,"r") as f:
                     nelement = f.read('nelement')
@@ -1452,7 +1453,7 @@ class xgc1(object):
         map_names = ["1dp_fwd","1dp_rev","hdp_fwd","hdp_rev"]
         for ff_name in map_names:
             #tmp=ff_mapping(ff_name)
-            self.__setattr__('ff_'+ff_name,self.ff_mapping(ff_name))
+            self.__setattr__('ff_'+ff_name,self.ff_mapping(ff_name,path))
 
     # Converts field into field-following representation (projection to midplane of
     # of a toroidal section)
