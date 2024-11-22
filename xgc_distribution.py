@@ -218,10 +218,10 @@ class XGCDistribution:
         else: # check invalid cases and set parameters
             #check invalid cases
             if(not add and not self.has_maxwellian):
-                print('No maxwellian component to remove')
+                print('remove_maxwellian: No maxwellian component to remove')
                 return
             if(add and self.has_maxwellian):
-                print('Maxwellian component already exists')
+                print('remove_maxwellian: Maxwellian component already exists')
                 return
             
             #set parameters
@@ -419,8 +419,10 @@ def interp_flux_surface_moments(psi_surf, moments_surf, x):
 #flux surface average using xgc_reader data and scatter back to the mesh
 # private region need to be implemented.
 def flux_surface_average(var, x):
-    fsa_surf = x.fsa_simple(var)    
+    fsa_surf = x.fsa_simple(var)
     var_favg = interp_flux_surface_moments(x.mesh.psi_surf, fsa_surf, x)
+    msk=x.mesh.region>2
+    var_favg[msk] = var[msk] # use original value for private region
     return (var_favg)
 
         
@@ -460,12 +462,12 @@ def convert_distribution(dist, x, x_new):
     dist_new=copy.deepcopy(dist)
 
     # 0.1 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
-    dist_new.nnodes = x_new.mesh.nnode
+    dist_new.nnodes = x_new.mesh.nnodes
     dist_new.resize()
 
     # 1. interpolate fg_temp_ev to the new mesh
     interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.fg_temp_ev)
-    dist_new.fg_temp_ev = interpolator(x_new.mesh.x, x_new.mesh.y)
+    dist_new.fg_temp_ev = interpolator(x_new.mesh.r, x_new.mesh.z)
 
     # 2. interpolate the distribution function to the new mesh
     # 2.1 add maxwellian
@@ -475,7 +477,7 @@ def convert_distribution(dist, x, x_new):
     for i in range(dist.vgrid.nvperp):
         for j in range(dist.vgrid.nvpdata):
             interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.f[:,i,j])
-            dist_new.f[:,i,j] = interpolator(x_new.mesh.x, x_new.mesh.y)
+            dist_new.f[:,i,j] = interpolator(x_new.mesh.r, x_new.mesh.z)
     # 2.3 update moments
     dist_new.update_maxwellian_moments(x_new)
 

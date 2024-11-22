@@ -608,6 +608,7 @@ class xgc1(object):
                 self.region=fm.read('region')
                 self.wedge_angle=fm.read('wedge_angle')
                 self.delta_phi=fm.read('delta_phi')
+                self.nnodes = np.size(self.r) # same as n_n 
 
 
     class f0meshdata(object):    
