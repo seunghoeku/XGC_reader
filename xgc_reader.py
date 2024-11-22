@@ -605,6 +605,9 @@ class xgc1(object):
                 self.epsilon=fm.read('epsilon')
                 self.rmin=fm.read('rmin')
                 self.rmaj=fm.read('rmaj')
+                self.region=fm.read('region')
+                self.wedge_angle=fm.read('wedge_angle')
+                self.delta_phi=fm.read('delta_phi')
 
 
     class f0meshdata(object):    
