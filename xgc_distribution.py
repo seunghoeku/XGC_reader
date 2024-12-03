@@ -177,7 +177,7 @@ class XGCDistribution:
 
 
     # update maxwellian distribution function
-    def update_maxwellian_moments(self, x): # x required for flux surface average
+    def update_maxwellian_moments(self, xr, do_flux_average=True): # x required for flux surface average
 
         # update_maxwellian_moments only for full-f distribution including maxwellian component.
         if(not self.has_maxwellian):
@@ -193,19 +193,37 @@ class XGCDistribution:
 
         # particle density
         ptls = np.sum(self.f, axis=(1, 2))
+        if(np.isnan(ptls).any()):
+            print('ptls has nan')
         den = ptls * vspace_vol
-        self.den = flux_surface_average(den, x)
+        if(do_flux_average):
+            self.den = flux_surface_average(den, xr)
+            if(np.isnan(self.den).any()):
+                print('den has nan after flux average')
+        else:
+            self.den = den
 
         # flow
         flow = np.sum(self.f * self.vgrid.vpara[np.newaxis, np.newaxis, :], axis=(1, 2))
+        if(np.isnan(flow).any()):
+            print( 'flow has nan:')
+
         flow = flow/ ptls * np.sqrt(self.fg_temp_ev * self.EV_TO_JOULE/ self.mass) 
-        self.flow = flux_surface_average(flow/x.mesh.r, x)*x.mesh.r # u/R (parallel rotation freq) flux average
+        if(do_flux_average):
+            self.flow = flux_surface_average(flow/xr.mesh.r, xr)*xr.mesh.r # u/R (parallel rotation freq) flux average
+            if(np.isnan(self.flow).any()):
+                print('flow has nan after flux average')
+        else:
+            self.flow = flow
 
         # temperature
         en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2        
         temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3 # mean enrgy 2/3
         temp = temp - 0.5 * self.flow**2 * self.mass/self.EV_TO_JOULE # moving frame
-        self.temp_ev = flux_surface_average(temp, x) 
+        if(do_flux_average):
+            self.temp_ev = flux_surface_average(temp, xr) 
+        else:
+            self.temp_ev = temp
 
         # undo multiplication by MU0_FACTOR
         self.f[:,0,:] = self.f[:,0,:] / self.MU0_FACTOR
@@ -297,10 +315,10 @@ class XGCDistribution:
 
     # setup canonical maxwellian
     # correction is to correct the psi_c value for being close to psi
-    def canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction):
+    def canonical_maxwellian(self, xr, psi_den, den_c, psi_temp, temp_ev_c, correction):
         fcm = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
 
-        bmag = np.sqrt(x.bfield[0,:]**2 + x.bfield[1,:]**2 + x.bfield[2,:]**2)
+        bmag = np.sqrt(xr.bfield[0,:]**2 + xr.bfield[1,:]**2 + xr.bfield[2,:]**2)
         q_m = self.E_CHARGE/self.mass
         m_q = 1/q_m
         #actual calculation
@@ -310,12 +328,12 @@ class XGCDistribution:
                 vpara = self.vgrid.vpara[j]*v_n # no flow
                 vperp = self.vgrid.vperp[i]*v_n
                 en =0.5* self.mass * (vpara**2 + vperp**2) 
-                psi_c = x.mesh.psi + m_q * x.mesh.r * x.bfield[2,:]/bmag * vpara
+                psi_c = xr.mesh.psi + m_q * xr.mesh.r * xr.bfield[2,:]/bmag * vpara
                 mu = 0.5 * self.mass * vperp**2 / bmag
                 if(correction):
-                    h = en - mu * x.eq_axis_b
+                    h = en - mu * xr.eq_axis_b
                     h = np.maximum(h,0.0) # hevyside function multiplied.
-                    psi_c = psi_c - np.sign(vpara)* m_q * x.eq_axis_r * np.sqrt(2*h/self.mass)
+                    psi_c = psi_c - np.sign(vpara)* m_q * xr.eq_axis_r * np.sqrt(2*h/self.mass)
                 
                 den = np.interp(psi_c, psi_den, den_c)
                 temp_ev = np.interp(psi_c, psi_temp, temp_ev_c)
@@ -338,10 +356,10 @@ class XGCDistribution:
 
     # Get the canonical maxwellian distribution function iteratively to match the moments
     # psi_den and psi_temp are unnormlized psi values
-    def set_canonical_maxwellian_iterative(self, x, psi_den, den_target_in, psi_temp, temp_ev_target_in, correction=True, tol=1e-2, max_iter=30, show_fig=False):
+    def set_canonical_maxwellian_iterative(self, xr, psi_den, den_target_in, psi_temp, temp_ev_target_in, correction=True, tol=1e-2, max_iter=30, show_fig=False):
 
         # interpolate the target moments to oned psi 
-        psi = x.od.psi*x.psix
+        psi = xr.od.psi*xr.psix
         den_target=np.interp(psi, psi_den, den_target_in)
         temp_ev_target=np.interp(psi, psi_temp, temp_ev_target_in)
 
@@ -352,15 +370,15 @@ class XGCDistribution:
         
         if(show_fig):
             fig, ax = plt.subplots(2,2)
-            ax[0,0].plot(psi/x.psix, den_target, label='target')
-            ax[0,1].plot(psi/x.psix, temp_ev_target, label='target')
+            ax[0,0].plot(psi/xr.psix, den_target, label='target')
+            ax[0,1].plot(psi/xr.psix, temp_ev_target, label='target')
 
         for iter in range(max_iter):
-            self.set_canonical_maxwellian(x, psi, den_c, psi , temp_ev_c, correction)
+            self.set_canonical_maxwellian(xr, psi, den_c, psi , temp_ev_c, correction)
             
             # get the difference between the target and the calculated moments
-            den_diff = den_target - np.interp(psi, x.mesh.psi_surf, x.fsa_simple(self.den))
-            temp_ev_diff = temp_ev_target - np.interp(psi, x.mesh.psi_surf, x.fsa_simple(self.temp_ev))
+            den_diff = den_target - np.interp(psi, xr.mesh.psi_surf, xr.fsa_simple(self.den))
+            temp_ev_diff = temp_ev_target - np.interp(psi, xr.mesh.psi_surf, xr.fsa_simple(self.temp_ev))
             error_den = np.sqrt(np.mean(den_diff**2))/den_norm 
             error_temp = np.sqrt(np.mean(temp_ev_diff**2))/temp_ev_norm
             error = np.sqrt(error_den**2 + error_temp**2)            
@@ -375,10 +393,10 @@ class XGCDistribution:
                 temp_ev_c = temp_ev_c + temp_ev_diff
             
             if(show_fig):
-                ax[1,0].plot(psi/x.psix, den_c, label='iter'+str(iter))                
-                ax[1,1].plot(psi/x.psix, temp_ev_c, label='iter'+str(iter))
-                ax[0,0].plot(x.mesh.psi/x.psix, self.den, label='iter'+str(iter))
-                ax[0,1].plot(x.mesh.psi/x.psix, self.temp_ev, label='iter'+str(iter))
+                ax[1,0].plot(psi/xr.psix, den_c, label='iter'+str(iter))                
+                ax[1,1].plot(psi/xr.psix, temp_ev_c, label='iter'+str(iter))
+                ax[0,0].plot(xr.mesh.psi/xr.psix, self.den, label='iter'+str(iter))
+                ax[0,1].plot(xr.mesh.psi/xr.psix, self.temp_ev, label='iter'+str(iter))
 
         if(show_fig):
             ax[0,0].set_title('Density local')
@@ -394,12 +412,12 @@ class XGCDistribution:
 
 
     # psi_den and psi_temp are unnormlized psi values
-    def set_canonical_maxwellian(self, x, psi_den, den_c, psi_temp, temp_ev_c, correction=True):
+    def set_canonical_maxwellian(self, xr, psi_den, den_c, psi_temp, temp_ev_c, correction=True):
         if(not self.has_maxwellian):
             delattr(self,'f_g')
-        self.f = self.canonical_maxwellian(x, psi_den, den_c, psi_temp, temp_ev_c, correction)
+        self.f = self.canonical_maxwellian(xr, psi_den, den_c, psi_temp, temp_ev_c, correction)
         self.has_maxwellian = True
-        self.update_maxwellian_moments(x)
+        self.update_maxwellian_moments(xr)
 
     # contour plot at the given node
     def contour_plot(self, nnode):
@@ -412,16 +430,23 @@ class XGCDistribution:
 
 
 # interpolate flux surface moments to mesh
-def interp_flux_surface_moments(psi_surf, moments_surf, x):
-    var_mesh = np.interp(x.mesh.psi, psi_surf, moments_surf)  # region 3 need to ba handled separately
+def interp_flux_surface_moments(psi_surf, moments_surf, xr):
+    var_mesh = np.interp(xr.mesh.psi, psi_surf, moments_surf)  # region 3 need to ba handled separately
     return var_mesh
 
 #flux surface average using xgc_reader data and scatter back to the mesh
 # private region need to be implemented.
-def flux_surface_average(var, x):
-    fsa_surf = x.fsa_simple(var)
-    var_favg = interp_flux_surface_moments(x.mesh.psi_surf, fsa_surf, x)
-    msk=x.mesh.region>2
+def flux_surface_average(var, xr):
+
+    # check if NaN exists
+    if(np.isnan(var).any()):
+        print('NaN exists in var')
+        idx=np.isnan(var)[0]
+        print('NaN at:', idx, var[idx])
+        
+    fsa_surf = xr.fsa_simple(var)
+    var_favg = interp_flux_surface_moments(xr.mesh.psi_surf, fsa_surf, xr)
+    msk=xr.mesh.region>2
     var_favg[msk] = var[msk] # use original value for private region
     return (var_favg)
 
@@ -454,20 +479,39 @@ def adios2_write_array(file, name, data):
 #  0. Assume that nvperp, nvpara, vperp_max, vpara_max are same for the new mesh.
 #  1. interpolate the normalization factor to the new mesh.
 #  2. interpolate the distribution function to the new mesh.
-def convert_distribution(dist, x, x_new):
+def convert_distribution(dist, xr_old, xr_new, update_moments=True, remove_maxwellian=True):
+    
+    import copy
+    import matplotlib.tri as tri
+    from scipy.spatial import cKDTree
     
     # 0. copy the VelocityGrid object
-    import copy
-    import matplotlib.tri as tri  
     dist_new=copy.deepcopy(dist)
 
     # 0.1 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
-    dist_new.nnodes = x_new.mesh.nnodes
+    dist_new.nnodes = xr_new.mesh.nnodes
     dist_new.resize()
 
+    # 0.2 find the points that are outside the mesh - to avoid NaN from interpolation
+    tf = xr_old.mesh.triobj.get_trifinder()
+    triangle_indices=tf(xr_new.mesh.r,xr_new.mesh.z)
+    outside = triangle_indices==-1
+
+    # 0.3 replace the outside points with the nearest points
+    points = np.column_stack((xr_old.mesh.r, xr_old.mesh.z))
+    query_points = np.column_stack((xr_new.mesh.r[outside], xr_new.mesh.z[outside]))
+    tree = cKDTree(points)    # Create a cKDTree from the reference points
+    distances, indices = tree.query(query_points) # Query the tree to find the nearest points
+    nearest_points = points[indices] # Get the nearest points
+
+    r = np.copy(xr_new.mesh.r)
+    z = np.copy(xr_new.mesh.z)
+    r[outside] = nearest_points[:,0]
+    z[outside] = nearest_points[:,1]
+
     # 1. interpolate fg_temp_ev to the new mesh
-    interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.fg_temp_ev)
-    dist_new.fg_temp_ev = interpolator(x_new.mesh.r, x_new.mesh.z)
+    interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.fg_temp_ev)
+    dist_new.fg_temp_ev = interpolator(r, z)
 
     # 2. interpolate the distribution function to the new mesh
     # 2.1 add maxwellian
@@ -476,12 +520,47 @@ def convert_distribution(dist, x, x_new):
     # 2.2 interpolate dist.f to dist_new.f
     for i in range(dist.vgrid.nvperp):
         for j in range(dist.vgrid.nvpdata):
-            interpolator = tri.LinearTriInterpolator(x.mesh.triobj, dist.f[:,i,j])
-            dist_new.f[:,i,j] = interpolator(x_new.mesh.r, x_new.mesh.z)
+            interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.f[:,i,j])
+            dist_new.f[:,i,j] = interpolator(r, z)
+
     # 2.3 update moments
-    dist_new.update_maxwellian_moments(x_new)
+    if(update_moments):
+        dist_new.update_maxwellian_moments(xr_new)
 
     # 2.4 remove maxwellian from dist_new.f
-    dist_new.remove_maxwellian()
+    if(update_moments and remove_maxwellian):
+        dist_new.remove_maxwellian()
 
     return dist_new
+
+# adjust private flux density
+#1. set flat private flux density or decaying density like input
+#2. scale f as den_new / dist.den
+#3. update maxwellian part
+def adjust_private_flux_density(dist, xr, decay_factor=1, decay_width=1.5E-2):
+    
+    #1. set flat private flux density or decaying density like input    
+    msk = xr.mesh.region>2
+    den_new = np.zeros_like(dist.den[msk])
+
+    #get density at the X-point (separatrix)
+    ix = np.argmin((xr.mesh.r-xr.eq_x_r)**2 + (xr.mesh.z-xr.eq_x_z)**2)
+    den_new = dist.den[ix] # set to the density at the X-point
+    
+    # adding decay factor
+    
+    factor=(1-decay_factor)*np.exp(-abs(xr.mesh.psi[msk]-xr.psix)/decay_width)+decay_factor;
+    den_new= factor * den_new
+
+    #2. scale f as den_new / dist.den
+    
+    #2.1 add maxwellian
+    dist.add_maxwellian()
+
+    #2.2 scale f
+    for i in range(dist.vgrid.nvperp):
+        for j in range(dist.vgrid.nvpdata):
+            dist.f[msk,i,j] = dist.f[msk,i,j] * den_new / dist.den[msk]
+
+    #2.3 update moments
+    dist.update_maxwellian_moments(xr)

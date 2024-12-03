@@ -33,6 +33,15 @@ class xgc1(object):
         os.chdir(path)
         self.path=os.getcwd()+'/'
     
+    @classmethod
+    def load_basic(cls, path='./'):
+        os.chdir(path)
+        cls.path=os.getcwd()+'/'
+        cls.load_unitsm(cls)
+        cls.load_oned(cls)
+        cls.setup_mesh(cls)
+        cls.setup_f0mesh(cls)
+        cls.load_volumes(cls)
 
     def load_unitsm(self):
         """
@@ -886,6 +895,8 @@ class xgc1(object):
                 s1=s1+var[idx]*self.mesh.node_vol[idx]
                 s2=s2+self.mesh.node_vol[idx]
             favg[i]=s1/s2
+            if(np.isnan(favg[i])):
+                print("NaN found at psi=%f" % self.mesh.psi_surf[i], 's1,s2=',s1,s2)
         return favg
     
     def flux_sum_simple(self,var):
