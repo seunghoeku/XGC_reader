@@ -225,7 +225,7 @@ class XGCDistribution:
         # temperature
         en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2        
         temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3 # mean enrgy 2/3
-        temp = temp - 0.5 * self.flow**2 * self.mass/self.EV_TO_JOULE # moving frame
+        temp = temp - 0.5 * flow**2 * self.mass/self.EV_TO_JOULE # moving frame
         if(do_flux_average):
             self.temp_ev = flux_surface_average(temp, xr) 
         else:
