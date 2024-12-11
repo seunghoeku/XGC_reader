@@ -175,6 +175,12 @@ class XGCDistribution:
 
         return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False)
 
+    # keep maxwellian component and remove the rest
+    def clear_nonmaxwellian(self):
+        if(self.has_maxwellian):
+            self.remove_maxwellian()
+        self.f_g[:,:,:] = 0.0
+
 
     # update maxwellian distribution function
     def update_maxwellian_moments(self, xr, do_flux_average=True): # x required for flux surface average
@@ -431,7 +437,11 @@ class XGCDistribution:
 
 # interpolate flux surface moments to mesh
 def interp_flux_surface_moments(psi_surf, moments_surf, xr):
-    var_mesh = np.interp(xr.mesh.psi, psi_surf, moments_surf)  # region 3 need to ba handled separately
+    # find last point of psi_surf that monotonically increases
+    for i in range(len(psi_surf)-1,0,-1):
+        if psi_surf[i] > psi_surf[i-1]:
+            break
+    var_mesh = np.interp(xr.mesh.psi, psi_surf[:i+1], moments_surf[:i+1])  # region 3 need to ba handled separately
     return var_mesh
 
 #flux surface average using xgc_reader data and scatter back to the mesh
@@ -485,19 +495,25 @@ def convert_distribution(dist, xr_old, xr_new, update_moments=True, remove_maxwe
     import matplotlib.tri as tri
     from scipy.spatial import cKDTree
     
-    # 0. copy the VelocityGrid object
+    # currently it interpolates the distribution.
+    # alternative approach is to interpolate the moments and then f_g
+    # 0 add maxwellian
+    if(not dist.has_maxwellian):
+        dist.add_maxwellian()
+
+    # 0.1 copy the VelocityGrid object
     dist_new=copy.deepcopy(dist)
 
-    # 0.1 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
+    # 0.2 create new dist object with new mesh -- nnodes, mass, has_maxwellian are same.
     dist_new.nnodes = xr_new.mesh.nnodes
     dist_new.resize()
 
-    # 0.2 find the points that are outside the mesh - to avoid NaN from interpolation
+    # 0.3 find the points that are outside the mesh - to avoid NaN from interpolation
     tf = xr_old.mesh.triobj.get_trifinder()
     triangle_indices=tf(xr_new.mesh.r,xr_new.mesh.z)
     outside = triangle_indices==-1
 
-    # 0.3 replace the outside points with the nearest points
+    # 0.4 replace the outside points with the nearest points
     points = np.column_stack((xr_old.mesh.r, xr_old.mesh.z))
     query_points = np.column_stack((xr_new.mesh.r[outside], xr_new.mesh.z[outside]))
     tree = cKDTree(points)    # Create a cKDTree from the reference points
@@ -514,20 +530,18 @@ def convert_distribution(dist, xr_old, xr_new, update_moments=True, remove_maxwe
     dist_new.fg_temp_ev = interpolator(r, z)
 
     # 2. interpolate the distribution function to the new mesh
-    # 2.1 add maxwellian
-    dist.add_maxwellian()
 
-    # 2.2 interpolate dist.f to dist_new.f
+    # 2.1 interpolate dist.f to dist_new.f
     for i in range(dist.vgrid.nvperp):
         for j in range(dist.vgrid.nvpdata):
             interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.f[:,i,j])
             dist_new.f[:,i,j] = interpolator(r, z)
 
-    # 2.3 update moments
+    # 2.2 update moments
     if(update_moments):
         dist_new.update_maxwellian_moments(xr_new)
 
-    # 2.4 remove maxwellian from dist_new.f
+    # 2.3 remove maxwellian from dist_new.f
     if(update_moments and remove_maxwellian):
         dist_new.remove_maxwellian()
 
