@@ -183,7 +183,7 @@ class XGCDistribution:
 
 
     # update maxwellian distribution function
-    def update_maxwellian_moments(self, xr, do_flux_average=True): # x required for flux surface average
+    def update_maxwellian_moments(self, xr, do_flux_average=True, no_update=False): # x required for flux surface average
 
         # update_maxwellian_moments only for full-f distribution including maxwellian component.
         if(not self.has_maxwellian):
@@ -202,12 +202,6 @@ class XGCDistribution:
         if(np.isnan(ptls).any()):
             print('ptls has nan')
         den = ptls * vspace_vol
-        if(do_flux_average):
-            self.den = flux_surface_average(den, xr)
-            if(np.isnan(self.den).any()):
-                print('den has nan after flux average')
-        else:
-            self.den = den
 
         # flow
         flow = np.sum(self.f * self.vgrid.vpara[np.newaxis, np.newaxis, :], axis=(1, 2))
@@ -215,24 +209,35 @@ class XGCDistribution:
             print( 'flow has nan:')
 
         flow = flow/ ptls * np.sqrt(self.fg_temp_ev * self.EV_TO_JOULE/ self.mass) 
-        if(do_flux_average):
-            self.flow = flux_surface_average(flow/xr.mesh.r, xr)*xr.mesh.r # u/R (parallel rotation freq) flux average
-            if(np.isnan(self.flow).any()):
-                print('flow has nan after flux average')
-        else:
-            self.flow = flow
 
         # temperature
         en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2        
         temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3 # mean enrgy 2/3
         temp = temp - 0.5 * flow**2 * self.mass/self.EV_TO_JOULE # moving frame
+
+        # flux surface average
         if(do_flux_average):
-            self.temp_ev = flux_surface_average(temp, xr) 
-        else:
-            self.temp_ev = temp
+            den = flux_surface_average(den, xr)
+            if(np.isnan(den).any()):
+                print('den has nan after flux average')
+
+            temp = flux_surface_average(temp, xr) 
+
+            flow = flux_surface_average(flow/xr.mesh.r, xr)*xr.mesh.r # u/R (parallel rotation freq) flux average
+            if(np.isnan(flow).any()):
+                print('flow has nan after flux average')
+
 
         # undo multiplication by MU0_FACTOR
         self.f[:,0,:] = self.f[:,0,:] / self.MU0_FACTOR
+
+        # update maxwellian moments
+        if(no_update):
+            return den, temp, flow
+        else:
+            self.den = den
+            self.flow = flow
+            self.temp_ev = temp
 
 
     # add or remove maxwellian to f_g or from f
@@ -578,3 +583,8 @@ def adjust_private_flux_density(dist, xr, decay_factor=1, decay_width=1.5E-2):
 
     #2.3 update moments
     dist.update_maxwellian_moments(xr)
+
+#get local moments
+def get_local_moments(dist, xr):
+    den, temp_ev, flow = dist.update_maxwellian_moments(xr, do_flux_average=False, no_update=True)
+    return den, temp_ev, flow
