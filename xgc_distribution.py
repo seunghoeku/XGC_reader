@@ -4,7 +4,7 @@ import xgc_reader
 import numpy as np
 import adios2
 import matplotlib.pyplot as plt
-
+import warnings
 class VelocityGrid:
     """
     A class to represent a velocity grid for a distribution function.
@@ -265,9 +265,14 @@ class XGCDistribution:
         #actual calculation
         for i in range(self.vgrid.nvperp):
             for j in range(self.vgrid.nvpdata):
-                v_n = np.sqrt(self.fg_temp_ev*self.E_CHARGE/self.mass)           
+                v_n = np.sqrt(self.fg_temp_ev*self.E_CHARGE/self.mass)
                 en =0.5* self.mass * ((self.vgrid.vpara[j]*v_n-self.flow)**2 + (self.vgrid.vperp[i]*v_n)**2) / (self.temp_ev*self.EV_TO_JOULE) # normalized energy by T
-                tmp = self.den * np.exp(-en) / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+                if np.any(en<0):
+                    print('Negative energy:', en[en <0])
+                    print('Negative energy index:', np.where(en<0))
+                    en[en<0]=0
+                tmp_exp = np.exp(-en)
+                tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
                 if(get):
                     fm[:,i,j] = tmp
                 else:
@@ -588,3 +593,24 @@ def adjust_private_flux_density(dist, xr, decay_factor=1, decay_width=1.5E-2):
 def get_local_moments(dist, xr):
     den, temp_ev, flow = dist.update_maxwellian_moments(xr, do_flux_average=False, no_update=True)
     return den, temp_ev, flow
+
+
+# regularize density near X-point region
+# default radius is 10cm
+# decay factor is (psi-psix)/
+def regularize_near_x(dist, xr, radius=0.1, del_psi_n = 0.01):
+    #1. define region
+    rr = np.sqrt( (xr.mesh.r - xr.eq_x_r)**2 + (xr.mesh.z - xr.eq_x_z)**2 )
+    msk =  rr < radius
+    tmp = np.abs(xr.mesh.psi[msk]/xr.psix -1) / del_psi_n
+    factor = np.exp(-tmp**2) * (1- rr[msk]/radius)**2
+
+    den_l, temp_l, flow_l = get_local_moments(dist, xr)
+    den_f, temp_f, flow_f = dist.update_maxwellian_moments(xr, do_flux_average=True, no_update=True)
+
+    factor2 = den_f[msk]/den_l[msk] * factor + (1-factor)
+
+    #2. scale f
+    for i in range(dist.vgrid.nvperp):
+        for j in range(dist.vgrid.nvpdata):
+            dist.f[msk,i,j] = dist.f[msk,i,j] * factor2
