@@ -109,6 +109,9 @@ class XGCDistribution:
         else:
             self.f_g = f
 
+        self.check_nan()
+
+
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
     def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True):
@@ -175,6 +178,24 @@ class XGCDistribution:
 
         return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False)
 
+    # check nan values in the data
+    def check_nan(self):
+        if(self.has_maxwellian):
+            if(np.isnan(self.f).any()):
+                print('f has nan')
+        else:
+            if(np.isnan(self.f_g).any()):
+                print('f_g has nan')
+
+        if(np.isnan(self.den).any()):
+            print('den has nan')
+        if(np.isnan(self.temp_ev).any()):
+            print('temp_ev has nan')
+        if(np.isnan(self.flow).any()):
+            print('flow has nan')
+        if(np.isnan(self.fg_temp_ev).any()):
+            print('fg_temp_ev has nan')
+
     # keep maxwellian component and remove the rest
     def clear_nonmaxwellian(self):
         if(self.has_maxwellian):
@@ -212,8 +233,9 @@ class XGCDistribution:
 
         # temperature
         en1 = np.add.outer(self.vgrid.vperp**2/2, self.vgrid.vpara**2/2) # check factoer 1/2        
-        temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev * 2/3 # mean enrgy 2/3
+        temp = np.sum(self.f * en1[np.newaxis,:, :], axis=(1, 2)) /ptls * self.fg_temp_ev  # mean enrgy
         temp = temp - 0.5 * flow**2 * self.mass/self.EV_TO_JOULE # moving frame
+        temp = temp * 2 / 3 # mean energy to temperature
 
         # flux surface average
         if(do_flux_average):
