@@ -114,7 +114,7 @@ class XGCDistribution:
 
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
-    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True):
+    def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True, use_initial_moments=False):
         with adios2.open(dir+'/'+filename,"rra") as file:
             it=time_step
             ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
@@ -151,14 +151,20 @@ class XGCDistribution:
                 t_tmp = file.read('f0_T_ev') # for old version
 
             fg_temp_ev = t_tmp[idx,:]  # need species index handling
+            if(use_initial_moments):
+                den= file.read('f0_den')
+                temp_ev= file.read('f0_T_ev')
+                flow = file.read('f0_flow')
+                den = den[idx,:]
+                temp_ev = temp_ev[idx,:]
+                flow = flow[idx,:]
+            else:
+                den = np.zeros(nnodes)
+                temp_ev = np.zeros(nnodes)
+                flow = np.zeros(nnodes)
 
         mass = mass_au * cls.PROTON_MASS
         charge = charge_num * cls.E_CHARGE
-
-        # Initialize other arrays with zeros or appropriate values
-        den = np.zeros(nnodes)
-        temp_ev = np.zeros(nnodes)
-        flow = np.zeros(nnodes)
 
         return cls(vgrid, nnodes, ftmp, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=True)
 

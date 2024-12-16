@@ -638,6 +638,9 @@ class xgc1(object):
                     self.te0=T_ev[0,:]
                     self.ne0=den0[0,:]
                     self.ue0=flow[0,:]
+                if(T_ev.shape[0]>=3):
+                    print('multi species - ni0, ti0, ui0 are last species')
+
                 self.dsmu=f.read('f0_dsmu')
                 self.dvp =f.read('f0_dvp')
                 self.smu_max=f.read('f0_smu_max')
