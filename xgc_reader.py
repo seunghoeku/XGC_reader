@@ -956,17 +956,17 @@ class xgc1(object):
     '''
     contour plot of one plane quantity
     '''
-    def contourf_one_var(self, fig, ax, var, title='None', vm='None', cmap='jet'):
+    def contourf_one_var(self, fig, ax, var, title='None', vm='None', cmap='jet', levels=150):
         if(vm=='None'):
-            cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap,extend='both',levels=150) #,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap,extend='both',levels=levels) #,vmin=-vm, vmax=vm)
         elif(vm=='Sigma2'):
             sigma = np.sqrt(np.mean(var*var) - np.mean(var)**2)
             vm = 2 * sigma
             var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=150,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=levels,vmin=-vm, vmax=vm)
         else:
             var2=np.minimum(vm,np.maximum(-vm,var))
-            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=150,vmin=-vm, vmax=vm)
+            cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=levels,vmin=-vm, vmax=vm)
         cbar = fig.colorbar(cf, ax=ax)
         if(title != 'None'):
             ax.set_title(title)
