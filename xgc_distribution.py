@@ -563,10 +563,16 @@ def convert_distribution(dist, xr_old, xr_new, update_moments=True, remove_maxwe
     r[outside] = nearest_points[:,0]
     z[outside] = nearest_points[:,1]
 
-    # 1. interpolate fg_temp_ev to the new mesh
+    # 1. interpolate fg_temp_ev (+moments) to the new mesh
     interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.fg_temp_ev)
     dist_new.fg_temp_ev = interpolator(r, z)
-
+    interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.den)
+    dist_new.den = interpolator(r, z)
+    interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.temp_ev)
+    dist_new.temp_ev = interpolator(r, z)
+    interpolator = tri.LinearTriInterpolator(xr_old.mesh.triobj, dist.flow)
+    dist_new.flow = interpolator(r, z)
+    
     # 2. interpolate the distribution function to the new mesh
 
     # 2.1 interpolate dist.f to dist_new.f
