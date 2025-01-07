@@ -470,7 +470,8 @@ class XGCDistribution:
         else:
             f=self.f_g
 
-        plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
+        contour = plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
+        plt.colorbar(contour)
 
 
 # interpolate flux surface moments to mesh
