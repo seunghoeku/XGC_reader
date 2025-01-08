@@ -9,13 +9,19 @@ TODO
 import numpy as np
 import os
 from matplotlib.tri import Triangulation, LinearTriInterpolator, CubicTriInterpolator
-import adios2
 import matplotlib.pyplot as plt
 from scipy.io import matlab
 from scipy.optimize import curve_fit
 from scipy.special import erfc
 import scipy.sparse as sp
 from tqdm.auto import trange, tqdm
+from functools import singledispatchmethod
+
+import adios2
+adios2_version_minor = int(adios2.__version__[2:adios2.__version__.find('.',2)])
+if adios2_version_minor < 10:
+   raise RuntimeError(f"Must use adios 2.10 or newer with the xgc_reader module, loaded 2.{adios2_version_minor}")
+
 
 class xgc1(object):
     
@@ -24,15 +30,23 @@ class xgc1(object):
         protmass=  1.67E-27
         mu0 = 4 * 3.141592 * 1E-7
 
-        
     def __init__(self, path='./'):
         """ 
-        initialize it from the current directory.
-        not doing much thing. 
+        initialize either cd to a directory to process many files later, or
+        open an Adios Campaign Archive now.
         """ 
-        os.chdir(path)
-        self.path=os.getcwd()+'/'
-    
+
+        if path.endswith(".aca"):
+            self.campaign = adios2.FileReader(path)
+            self.path=''  # for self.path+filename to able to serve as name in campaign
+            # get all variable names and info at once and save for reuse
+            self.campaign_all_vars = self.campaign.available_variables()
+        else:
+            self.campaign=None
+            os.chdir(path)
+            self.path=os.getcwd()+'/'
+            self.campaign_all_vars = {} # not usable when reading individual files locally
+
     @classmethod
     def load_basic(cls, path='./'):
         os.chdir(path)
@@ -43,36 +57,69 @@ class xgc1(object):
         cls.setup_f0mesh(cls)
         cls.load_volumes(cls)
 
-    def load_unitsm(self):
+    def load_units(self):
         """
-        read in units file
+        read in xgc.units.bp file
         """
-        self.unit_file = self.path+'units.m'
-        self.unit_dic = self.load_m(self.unit_file) #actual reading routine
-        self.psix=self.unit_dic['psi_x']
+        if self.campaign:
+            f = self.campaign
+            prefix = 'xgc.units.bp/'
+        else:
+            f = adios2.FileReader(self.path+"xgc.units.bp")
+            prefix = ''
+            
+        self.unit_dic = {}
+        self.unit_dic['eq_x_psi'] = f.read(prefix+'eq_x_psi')
+        self.unit_dic['eq_x_r'] = f.read(prefix+'eq_x_r')
+        self.unit_dic['eq_x_z'] = f.read(prefix+'eq_x_z')
+        self.unit_dic['eq_axis_r'] = f.read(prefix+'eq_axis_r')
+        self.unit_dic['eq_axis_z'] = f.read(prefix+'eq_axis_z')
+        self.unit_dic['eq_axis_b'] = f.read(prefix+'eq_axis_b')
+        self.unit_dic['sml_dt'] = f.read(prefix+'sml_dt')
+        self.unit_dic['diag_1d_period'] = f.read(prefix+'diag_1d_period')
+
+        self.unit_dic['e_ptl_charge_eu'] = f.read(prefix+'e_ptl_charge_eu')
+        self.unit_dic['e_ptl_mass_au'] = f.read(prefix+'e_ptl_mass_au')
+        self.unit_dic['eq_den_v1'] = f.read(prefix+'eq_den_v1')
+        self.unit_dic['eq_tempi_v1'] = f.read(prefix+'eq_tempi_v1')
+        self.unit_dic['i_ptl_charge_eu'] = f.read(prefix+'i_ptl_charge_eu')
+        self.unit_dic['i_ptl_mass_au'] = f.read(prefix+'i_ptl_mass_au')
+        self.unit_dic['sml_dt'] = f.read(prefix+'sml_dt')
+        self.unit_dic['sml_totalpe'] = f.read(prefix+'sml_totalpe')
+        self.unit_dic['sml_tran'] = f.read(prefix+'sml_tran')
+        try:
+            self.unit_dic['sml_wedge_n'] = f.read(prefix+'sml_wedge_n')
+        except:
+            self.unit_dic['sml_wedge_n'] = 1  # XGCa
+
+        self.psix = self.unit_dic['eq_x_psi']
         self.eq_x_r = self.unit_dic['eq_x_r']
         self.eq_x_z = self.unit_dic['eq_x_z']
         self.eq_axis_r = self.unit_dic['eq_axis_r']
         self.eq_axis_z = self.unit_dic['eq_axis_z']
         self.eq_axis_b = self.unit_dic['eq_axis_b']
         self.sml_dt = self.unit_dic['sml_dt']
-        try:
-            self.sml_wedge_n = self.unit_dic['sml_wedge_n']
-        except:
-            self.sml_wedge_n=1 # XGCa    
+        self.sml_wedge_n = self.unit_dic['sml_wedge_n']
         self.diag_1d_period = self.unit_dic['diag_1d_period']
+
+        if not self.campaign:
+            f.close()
+
 
     def load_oned(self, i_mass=2, i2mass=12):
         """
         load xgc.oneddiag.bp and some post process
         """
-        self.od=self.data1(self.path+"xgc.oneddiag.bp") #actual reading routine
+        if self.campaign:
+            self.od=self.data1(self.campaign, self.campaign_all_vars, "xgc.oneddiag.bp") #actual reading routine
+        else:
+            self.od=self.data1(self.path+"xgc.oneddiag.bp") #actual reading routine
         self.od.psi=self.od.psi[0,:]
         self.od.psi00=self.od.psi00[0,:]
         try:
             self.od.psi00n=self.od.psi00/self.psix #Normalize 0 - 1(Separatrix)
         except:
-            print("psix is not defined - call load_unitsm() to get psix to get psi00n")
+            print("psix is not defined - call load_units() to get psix to get psi00n")
         # Temperatures
         try: 
             Teperp=self.od.e_perp_temperature_df_1d
@@ -149,20 +196,32 @@ class xgc1(object):
         Trying to be general, but used only for xgc.onedidag.bp
     """
     class data1(object):
-        def __init__(self,filename):
-            with adios2.open(filename,"rra") as f:
-                #read file and assign it
-                self.vars=f.available_variables()
-                for v in self.vars:
-                    stc=self.vars[v].get("AvailableStepsCount")
-                    ct=self.vars[v].get("Shape")
-                    sgl=self.vars[v].get("SingleValue")
-                    stc=int(stc)
-                    if ct!='':
-                        ct=int(ct)
-                        setattr(self,v,f.read(v,start=[0], count=[ct], step_start=0, step_count=stc))
-                    elif v!='gsamples' and v!='samples' :
-                        setattr(self,v,f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
+        @singledispatchmethod
+        def __init__(self, filename):
+            with adios2.FileReader(filename) as f:
+                vars=f.available_variables()
+                self.load_data(f, vars, 0)
+
+        # e.g. data1(adios2.FileReader, vars, 'xgc.oneddiag.bp') 
+        # to read selected vars from already open file/campaign
+        @__init__.register(adios2.FileReader)
+        def _(self, f: adios2.FileReader, vars: dict, filename: str):
+            vs = {k:v for (k,v) in vars.items() if k.startswith(filename)}
+            self.load_data(f, vs, len(filename+"/"))
+
+        def load_data(self, f: adios2.FileReader, vars: dict, prefix_len: int):
+            for v in vars:
+                stc=vars[v].get("AvailableStepsCount")
+                ct=vars[v].get("Shape")
+                sgl=vars[v].get("SingleValue")
+                stc=int(stc)
+                if ct!='':
+                    ct=int(ct)
+                    data = f.read(v,start=[0], count=[ct], step_selection=[0, stc])
+                    setattr(self,v[prefix_len:],np.reshape(data, [stc, ct]))
+                elif v!='gsamples' and v!='samples' :
+                    setattr(self,v[prefix_len:],f.read(v,start=[], count=[], step_selection=[0, stc])) #null list for scalar
+
         def d_dpsi(self,var,psi):
             """
             radial derivative using psi_mks.
@@ -179,7 +238,7 @@ class xgc1(object):
     """
     class datahlp(object):
         def __init__(self,filename,irg, read_rz_all=False):
-            with adios2.open(filename,"rra") as f:
+            with adios2.FileReader(filename) as f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
                 self.vars=f.available_variables()
@@ -407,7 +466,7 @@ class xgc1(object):
     """
     class databfm(object):
         def __init__(self,path):
-            with adios2.open(path+"xgc.bfieldm.bp","rra") as f:
+            with adios2.FileReader(path+"xgc.bfieldm.bp") as f:
                 self.vars=f.available_variables()
                 if('rmajor' in self.vars):
                     v='rmajor'
@@ -494,7 +553,7 @@ class xgc1(object):
         Load xgc.bfield.bp -- equilibrium bfield 
     """
     def load_bfield(self):
-        with adios2.open(self.path+"xgc.bfield.bp","rra") as f:
+        with adios2.FileReader(self.path+"xgc.bfield.bp") as f:
 
             self.bfield = f.read('node_data[0]/values')
             if(self.bfield.shape[0]==0):
@@ -572,7 +631,10 @@ class xgc1(object):
     setup self.mesh
     """
     def setup_mesh(self):
-        self.mesh=self.meshdata(self.path)
+        if self.campaign:
+            self.mesh = self.meshdata(self.campaign)
+        else:
+            self.mesh = self.meshdata(self.path)
 
         #setup separatrix
         self.mesh.isep = np.argmin(abs(self.mesh.psi_surf-self.psix))
@@ -584,67 +646,85 @@ class xgc1(object):
     setup f0mesh
     """ 
     def setup_f0mesh(self):
-       self.f0=self.f0meshdata(self.path)
+        if self.campaign:
+            self.f0 = self.f0meshdata(self.campaign)
+        else:
+            self.f0 = self.f0meshdata(self.path)
 
     class meshdata(object):    
         """
         mesh data class for 2D contour plot
         """
+        @singledispatchmethod
         def __init__(self,path):
-            with adios2.open(path+"xgc.mesh.bp","rra") as fm:
-                rz=fm.read('rz')
-                self.cnct=fm.read('nd_connect_list')
-                self.r=rz[:,0]
-                self.z=rz[:,1]
-                self.triobj = Triangulation(self.r,self.z,self.cnct)
-                try:
-                    self.surf_idx=fm.read('surf_idx')
-                except:
-                    print("No surf_idx in xgc.mesh.bp") 
-                else:
-                    self.surf_len=fm.read('surf_len')
-                    self.psi_surf=fm.read('psi_surf')
-                    self.theta=fm.read('theta')
-                    self.m_max_surf=fm.read('m_max_surf')
+            with adios2.FileReader(path+"xgc.mesh.bp") as fm:
+                self.load_mesh(fm)
 
-                self.node_vol=fm.read('node_vol')
-                self.node_vol_nearest=fm.read('node_vol_nearest')
-                self.qsafety=fm.read('qsafety')
-                self.psi=fm.read('psi')
-                self.epsilon=fm.read('epsilon')
-                self.rmin=fm.read('rmin')
-                self.rmaj=fm.read('rmaj')
-                self.region=fm.read('region')
-                self.wedge_angle=fm.read('wedge_angle')
-                self.delta_phi=fm.read('delta_phi')
-                self.nnodes = np.size(self.r) # same as n_n 
+        @__init__.register(adios2.FileReader)
+        def _(self, fm: adios2.FileReader):
+            self.load_mesh(fm, "xgc.mesh.bp/")
 
+        def load_mesh(self, fm: adios2.FileReader, prefix=''):
+            rz=fm.read(prefix+'rz')
+            self.cnct=fm.read(prefix+'nd_connect_list')
+            self.r=rz[:,0]
+            self.z=rz[:,1]
+            self.triobj = Triangulation(self.r,self.z,self.cnct)
+            try:
+                self.surf_idx=fm.read(prefix+'surf_idx')
+            except:
+                print("No surf_idx in xgc.mesh.bp") 
+            else:
+                self.surf_len=fm.read(prefix+'surf_len')
+                self.psi_surf=fm.read(prefix+'psi_surf')
+                self.theta=fm.read(prefix+'theta')
+                self.m_max_surf=fm.read(prefix+'m_max_surf')
+
+            self.node_vol=fm.read(prefix+'node_vol')
+            self.node_vol_nearest=fm.read(prefix+'node_vol_nearest')
+            self.qsafety=fm.read(prefix+'qsafety')
+            self.psi=fm.read(prefix+'psi')
+            self.epsilon=fm.read(prefix+'epsilon')
+            self.rmin=fm.read(prefix+'rmin')
+            self.rmaj=fm.read(prefix+'rmaj')
+            self.region=fm.read(prefix+'region')
+            self.wedge_angle=fm.read(prefix+'wedge_angle')
+            self.delta_phi=fm.read(prefix+'delta_phi')
+            self.nnodes = np.size(self.r) # same as n_n 
 
     class f0meshdata(object):    
         """
         mesh data class for 2D contour plot
         """
+        @singledispatchmethod
         def __init__(self,path):
-            with adios2.open(path+"xgc.f0.mesh.bp","rra") as f:
-                T_ev=f.read('f0_T_ev')
-                den0=f.read('f0_den')
-                flow=f.read('f0_flow')
-                if(flow.size==0):
-                    flow=np.zeros_like(den0) #zero flow when flow is not written
-                self.ni0=den0[-1,:]
-                self.ti0=T_ev[-1,:]  # last species. need update for multi ion
-                self.ui0=flow[-1,:]
-                if(T_ev.shape[0]>=2):
-                    self.te0=T_ev[0,:]
-                    self.ne0=den0[0,:]
-                    self.ue0=flow[0,:]
-                if(T_ev.shape[0]>=3):
-                    print('multi species - ni0, ti0, ui0 are last species')
+            with adios2.FileReader(path+"xgc.f0.mesh.bp") as f:
+                self.load_f0mesh(f)
 
-                self.dsmu=f.read('f0_dsmu')
-                self.dvp =f.read('f0_dvp')
-                self.smu_max=f.read('f0_smu_max')
-                self.vp_max=f.read('f0_vp_max')
+        @__init__.register(adios2.FileReader)
+        def _(self, f: adios2.FileReader):
+            self.load_f0mesh(f, "xgc.f0.mesh.bp/")
+
+        def load_f0mesh(self, f: adios2.FileReader, prefix=''):
+            T_ev=f.read(prefix+'f0_T_ev')
+            den0=f.read(prefix+'f0_den')
+            flow=f.read(prefix+'f0_flow')
+            if(flow.size==0):
+                flow=np.zeros_like(den0) #zero flow when flow is not written
+            self.ni0=den0[-1,:]
+            self.ti0=T_ev[-1,:]  # last species. need update for multi ion
+            self.ui0=flow[-1,:]
+            if(T_ev.shape[0]>=2):
+                self.te0=T_ev[0,:]
+                self.ne0=den0[0,:]
+                self.ue0=flow[0,:]
+            if(T_ev.shape[0]>=3):
+                print('multi species - ni0, ti0, ui0 are last species')
+
+            self.dsmu=f.read(prefix+'f0_dsmu')
+            self.dvp =f.read(prefix+'f0_dvp')
+            self.smu_max=f.read(prefix+'f0_smu_max')
+            self.vp_max=f.read(prefix+'f0_vp_max')
 
     """
     flux surface average data structure
@@ -652,7 +732,7 @@ class xgc1(object):
     """
     class fluxavg(object):
         def __init__(self,path):
-            with adios2.open(path + "xgc.fluxavg.bp","rra") as f:
+            with adios2.FileReader(path + "xgc.fluxavg.bp") as f:
                 eindex=f.read('eindex')
                 nelement=f.read('nelement')
                 self.npsi=f.read('npsi')
@@ -674,7 +754,7 @@ class xgc1(object):
         read volume data
         """
         def __init__(self,path):
-            with adios2.open(path+"xgc.volumes.bp","rra") as f:
+            with adios2.FileReader(path+"xgc.volumes.bp") as f:
                 self.od=f.read("diag_1d_vol")
                 #try:
                 self.adj_eden=f.read("psn_adj_eden_vol")
@@ -702,7 +782,7 @@ class xgc1(object):
                 filename= "xgc.3d.%5.5d.bp" % (i)
 
                 #read data
-                with adios2.open(filename,"rra") as f:
+                with adios2.FileReader(filename) as f:
                     dpot=f.read("dpot")
                     dden=f.read("eden")
 
@@ -808,7 +888,7 @@ class xgc1(object):
         levels = kwargs.get('levels', None)
         cmap = kwargs.get('cmap', 'jet')
         
-        f=adios2.open(filestr,'rra')
+        f=adios2.FileReader(filestr)
         var=f.read(varstr)
         fig, ax=plt.subplots()
 
@@ -923,7 +1003,7 @@ class xgc1(object):
         print("X-point (R,Z) = (%5.5f, %5.5f)" % (self.eq_x_r, self.eq_x_z))
         print("simulation delta t = %e s" % self.sml_dt)
         print("wedge number = %d" % self.sml_wedge_n)
-        print("Ion mass = %d" % self.unit_dic['ptl_ion_mass_au'])
+        print("Ion mass = %d" % self.unit_dic['i_ptl_mass_au'])
         #print("particle number = %e" % (self.unit_dic['sml_totalpe']* self.unit_dic['ptl_num']))
     
     def midplane(self):
@@ -1101,7 +1181,7 @@ class xgc1(object):
         ct= 0
         pbar = tqdm(range(istart,iend,skip))
         for i in pbar:
-            f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'rra')
+            f=adios2.FileReader('xgc.f3d.%5.5d.bp' % (i))
 
             i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
             e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
@@ -1130,7 +1210,7 @@ class xgc1(object):
 
         #get nphi
         i=istart
-        f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
+        f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
 
         dpot=f.read('dpot')
         f.close()
@@ -1140,7 +1220,7 @@ class xgc1(object):
         time=np.zeros(nt)
         pbar = tqdm(range(istart,iend+skip,skip))
         for i in pbar:
-            f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
+            f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
             time1=f.read('time')
@@ -1391,7 +1471,7 @@ class xgc1(object):
     # read one variable from filestr -- for 3d and f3d files. 
     # it might work with other files, too.
     def read_one_ad2_var(self,filestr,varstr):
-        f=adios2.open(filestr,'rra')
+        f=adios2.FileReader(filestr)
         #f.__next__()
         var=f.read(varstr)
         f.close()
@@ -1423,7 +1503,7 @@ class xgc1(object):
         gradient operation
         """
         def __init__(self,path):
-            with adios2.open(path+"xgc.grad_rz.bp","r") as f:
+            with adios2.FileReader(path+"xgc.grad_rz.bp") as f:
                 try:
                     # Flag indicating whether gradient is (R,Z) or (psi,theta)
                     self.mat_basis = f.read('basis')
@@ -1456,7 +1536,7 @@ class xgc1(object):
     class ff_mapping(xgc_mat):
         def __init__(self,ff_name,path):
                 fn       ='xgc.ff_'+ff_name+'.bp'
-                with adios2.open(fn,"r") as f:
+                with adios2.FileReader(fn) as f:
                     nelement = f.read('nelement')
                     eindex   = f.read('eindex')-1
                     value    = f.read('value')
@@ -1566,7 +1646,7 @@ class xgc1(object):
     def write_dAs_ff_for_poincare(self,fnum):
         #load As
         fn='xgc.3d.%5.5d.bp'%fnum
-        with adios2.open(fn,"r") as f:
+        with adios2.FileReader(fn) as f:
             As = f.read('apars').transpose()
             print('Read As[%d,%d] from '%(As.shape[0],As.shape[1]) +fn)
             print('As',As.shape)
@@ -1605,7 +1685,7 @@ class xgc1(object):
     # source_type = 'collision', 'heat_torque', 'neutral', 'pellet', 'radiation', 'total', total2'
     def source_simple(self, step, period, sp='i_', moments='energy', source_type='heat_torque'):
 
-        with adios2.open("xgc.fsourcediag.%5.5d.bp"%step,"rra") as f:
+        with adios2.FileReader("xgc.fsourcediag.%5.5d.bp"%step) as f:
             var=f.read(sp+moments+'_change_'+source_type)
             den=f.read(sp+'density_' +source_type)
             vol=f.read(sp+'volume_'  +source_type) 
@@ -1626,7 +1706,7 @@ class xgc1(object):
         #ax.set(xlabel='Normalized Pol. Flux')
 
 
-'''
+r'''
 def load_prf(filename):
     import pandas as pd
     #space separated file 
