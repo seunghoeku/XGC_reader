@@ -155,7 +155,9 @@ class XGCDistribution:
             nnodes=ftmp.shape[0]
 
             if(has_boltzmann):
-                dpot = np.mean(file.read('dpot'),axis=0) # toroidal average -- assume that they are axisymmetric.
+                dpot = file.read('dpot')
+                if(dpot.ndim == 2): # ndim=1 for XGCa.
+                    dpot = np.mean(dpot,axis=0) # toroidal average -- assume that they are axisymmetric.
             else:
                 dpot = None
 
