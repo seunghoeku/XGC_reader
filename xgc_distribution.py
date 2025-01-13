@@ -94,7 +94,7 @@ class XGCDistribution:
     MU0_FACTOR: ClassVar[float] = 1/3
     
     #initialize from data passing
-    def __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, charge: float, has_maxwellian=True) -> None:
+    def __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, charge: float, has_maxwellian=True, has_boltzmann=False, dpot=None) -> None:
         self.vgrid = vgrid
         self.nnodes = nnodes
         self.den = den
@@ -104,10 +104,15 @@ class XGCDistribution:
         self.mass = mass
         self.charge = charge
         self.has_maxwellian = has_maxwellian
+        self.has_boltzmann = has_boltzmann
+
         if(has_maxwellian):
             self.f = f
         else:
             self.f_g = f
+
+        if(has_boltzmann):
+            self.dpot = dpot
 
         self.check_nan()
 
@@ -115,6 +120,24 @@ class XGCDistribution:
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
     def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True, use_initial_moments=False):
+        # read the specific species.
+        if(var_string=='e_f'):
+            idx = 0
+        elif(var_string=='i_f'):
+            idx = 1
+        else:
+            if var_string.startswith('i'):
+                idx = int(var_string[1]) if var_string[1].isdigit() else 0
+            else:
+                raise ValueError(f"Unsupported var_string: {var_string}") 
+        if(not has_electron):
+            idx = idx-1
+
+        # electron distribution has boltzmann factor - need to read dpot, too
+        if(var_string=='e_f'):
+            has_boltzmann = True
+        else:
+            has_boltzmann = False
         with adios2.FileReader(dir+'/'+filename) as file:
             it=time_step
             ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
@@ -129,23 +152,17 @@ class XGCDistribution:
             nvpara = int((ftmp.shape[2]-1)/2)
             nnodes=ftmp.shape[0]
 
+            if(has_boltzmann):
+                dpot = file.read('dpot')
+                if(dpot.ndim == 2): # ndim=1 for XGCa.
+                    dpot = np.mean(dpot,axis=0) # toroidal average -- assume that they are axisymmetric.
+            else:
+                dpot = None
         with adios2.FileReader(dir + 'xgc.f0.mesh.bp') as file:
             vp_max = file.read('f0_vp_max')
             smu_max = file.read('f0_smu_max')
             vgrid = VelocityGrid(nvperp, nvpara, smu_max, vp_max)
             
-            # read the specific species.
-            if(var_string=='e_f'):
-                idx = 0
-            elif(var_string=='i_f'):
-                idx = 1
-            else:
-                if var_string.startswith('i'):
-                    idx = int(var_string[1]) if var_string[1].isdigit() else 0
-                else:
-                    raise ValueError(f"Unsupported var_string: {var_string}") 
-            if(not has_electron):
-                idx = idx-1
             t_tmp = file.read('f0_fg_T_ev')
             if(t_tmp.ndim != 2):
                 t_tmp = file.read('f0_T_ev') # for old version
@@ -166,7 +183,7 @@ class XGCDistribution:
         mass = mass_au * cls.PROTON_MASS
         charge = charge_num * cls.E_CHARGE
 
-        return cls(vgrid, nnodes, ftmp, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=True)
+        return cls(vgrid, nnodes, ftmp, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=True, has_boltzmann=has_boltzmann, dpot=dpot)
 
     #initialize from distribution input file -- same format as that of save()
     @classmethod
@@ -301,6 +318,9 @@ class XGCDistribution:
                     en[en<0]=0
                 tmp_exp = np.exp(-en)
                 tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+                if(self.has_boltzmann):
+                    tmp = tmp * self.exp_ad(self.dpot/self.temp_ev)
+
                 if(get):
                     fm[:,i,j] = tmp
                 else:
@@ -470,9 +490,46 @@ class XGCDistribution:
         else:
             f=self.f_g
 
-        plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
+        contour = plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
+        plt.colorbar(contour)
 
 
+    def exp_ad(self, x):
+        a: Final=0.7
+        tmp = np.exp(-np.abs(x) + a) * (1-a)
+        tmp2 = np.where(x < -a, tmp, 1.0+x)
+        return (np.where(x>a, 2-tmp, tmp2))
+
+    # remove boltzmann factor in maxwellian component
+    # Still maxwellian w/o botzmann factor is kept.
+    def remove_boltzmann(self):
+        if(not self.has_boltzmann):
+            print('No Boltzmann factor to remove')
+            return
+    
+        # It asssumes that the original distribution already has boltzmann factor
+        # If maxwellian is removed, that must be wrong and it gives worng f_g.
+        # So, add back maxwellian first to get the original f.
+        self.add_maxwellian()
+        bltz_factor = self.exp_ad(self.dpot/self.temp_ev)
+
+        #actual calculation - this for loop is based on remove_maxwellian()
+        for i in range(self.vgrid.nvperp):
+            for j in range(self.vgrid.nvpdata):
+                v_n = np.sqrt(self.fg_temp_ev*self.E_CHARGE/self.mass)
+                en =0.5* self.mass * ((self.vgrid.vpara[j]*v_n-self.flow)**2 + (self.vgrid.vperp[i]*v_n)**2) / (self.temp_ev*self.EV_TO_JOULE) # normalized energy by T
+                if np.any(en<0):
+                    print('Negative energy:', en[en <0])
+                    print('Negative energy index:', np.where(en<0))
+                    en[en<0]=0
+                tmp_exp = np.exp(-en)
+                tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+                
+                # remove maxwellian with botzmann factor and add maxwellian without boltzmann factor.
+                self.f[:,i,j] = self.f[:,i,j] + tmp* (1-bltz_factor)
+
+        self.has_boltzmann = False
+        
 # interpolate flux surface moments to mesh
 def interp_flux_surface_moments(psi_surf, moments_surf, xr):
     # find last point of psi_surf that monotonically increases
