@@ -17,6 +17,13 @@ from scipy.special import erfc
 import scipy.sparse as sp
 from tqdm.auto import trange, tqdm
 
+def adios2_open(filename):
+    if tuple(map(int, adios2.__version__.split('.'))) >= (2, 10, 0):
+        return adios2.Stream(filename,'rra')
+    else:
+        return adios2.open(filename,'rra')
+
+
 class xgc1(object):
     
     class cnst:
@@ -136,7 +143,7 @@ class xgc1(object):
     """
     class data1(object):
         def __init__(self,filename):
-            with adios2.open(filename,"rra") as f:
+            with adios2_open(filename) as f:
                 #read file and assign it
                 self.vars=f.available_variables()
                 for v in self.vars:
@@ -165,7 +172,7 @@ class xgc1(object):
     """
     class datahlp(object):
         def __init__(self,filename,irg, read_rz_all=False):
-            with adios2.open(filename,"rra") as f:
+            with adios2_open(filename) as f:
                 #irg is region number 0,1 - outer, inner
                 #read file and assign it
                 self.vars=f.available_variables()
@@ -393,7 +400,7 @@ class xgc1(object):
     """
     class databfm(object):
         def __init__(self):
-            with adios2.open("xgc.bfieldm.bp","rra") as f:
+            with adios2_open("xgc.bfieldm.bp") as f:
                 self.vars=f.available_variables()
                 if('rmajor' in self.vars):
                     v='rmajor'
@@ -480,7 +487,7 @@ class xgc1(object):
         Load xgc.bfield.bp -- equilibrium bfield 
     """
     def load_bfield(self):
-        with adios2.open("xgc.bfield.bp","rra") as f:
+        with adios2_open("xgc.bfield.bp") as f:
 
             self.bfield = f.read('node_data[0]/values')
             if(self.bfield.shape[0]==0):
@@ -577,7 +584,7 @@ class xgc1(object):
         mesh data class for 2D contour plot
         """
         def __init__(self):
-            with adios2.open("xgc.mesh.bp","rra") as fm:
+            with adios2_open("xgc.mesh.bp") as fm:
                 rz=fm.read('rz')
                 self.cnct=fm.read('nd_connect_list')
                 self.r=rz[:,0]
@@ -607,7 +614,7 @@ class xgc1(object):
         mesh data class for 2D contour plot
         """
         def __init__(self):
-            with adios2.open("xgc.f0.mesh.bp","rra") as f:
+            with adios2_open("xgc.f0.mesh.bp") as f:
                 T_ev=f.read('f0_T_ev')
                 den0=f.read('f0_den')
                 flow=f.read('f0_flow')
@@ -631,7 +638,7 @@ class xgc1(object):
     """
     class fluxavg(object):
         def __init__(self):
-            with adios2.open("xgc.fluxavg.bp","rra") as f:
+            with adios2_open("xgc.fluxavg.bp") as f:
                 eindex=f.read('eindex')
                 nelement=f.read('nelement')
                 self.npsi=f.read('npsi')
@@ -653,7 +660,7 @@ class xgc1(object):
         read volume data
         """
         def __init__(self):
-            with adios2.open("xgc.volumes.bp","rra") as f:
+            with adios2_open("xgc.volumes.bp") as f:
                 self.od=f.read("diag_1d_vol")
                 #try:
                 self.adj_eden=f.read("psn_adj_eden_vol")
@@ -681,7 +688,7 @@ class xgc1(object):
                 filename= "xgc.3d.%5.5d.bp" % (i)
 
                 #read data
-                with adios2.open(filename,"rra") as f:
+                with adios2_open(filename) as f:
                     dpot=f.read("dpot")
                     dden=f.read("eden")
 
@@ -787,7 +794,7 @@ class xgc1(object):
         levels = kwargs.get('levels', None)
         cmap = kwargs.get('cmap', 'jet')
         
-        f=adios2.open(filestr,'rra')
+        f=adios2_open(filestr)
         var=f.read(varstr)
         fig, ax=plt.subplots()
 
@@ -1078,7 +1085,7 @@ class xgc1(object):
         ct= 0
         pbar = tqdm(range(istart,iend,skip))
         for i in pbar:
-            f=adios2.open('xgc.f3d.%5.5d.bp' % (i),'rra')
+            f=adios2_open('xgc.f3d.%5.5d.bp' % (i))
 
             i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
             e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
@@ -1107,7 +1114,7 @@ class xgc1(object):
 
         #get nphi
         i=istart
-        f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
+        f=adios2_open('xgc.3d.%5.5d.bp' % (i))
 
         dpot=f.read('dpot')
         f.close()
@@ -1117,7 +1124,7 @@ class xgc1(object):
         time=np.zeros(nt)
         pbar = tqdm(range(istart,iend+skip,skip))
         for i in pbar:
-            f=adios2.open('xgc.3d.%5.5d.bp' % (i),'rra')
+            f=adios2_open('xgc.3d.%5.5d.bp' % (i))
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
             time1=f.read('time')
@@ -1368,7 +1375,7 @@ class xgc1(object):
     # read one variable from filestr -- for 3d and f3d files. 
     # it might work with other files, too.
     def read_one_ad2_var(self,filestr,varstr):
-        f=adios2.open(filestr,'rra')
+        f=adios2_open(filestr)
         #f.__next__()
         var=f.read(varstr)
         f.close()
@@ -1400,7 +1407,7 @@ class xgc1(object):
         gradient operation
         """
         def __init__(self):
-            with adios2.open("xgc.grad_rz.bp","r") as f:
+            with adios2_open("xgc.grad_rz.bp") as f:
                 try:
                     # Flag indicating whether gradient is (R,Z) or (psi,theta)
                     self.mat_basis = f.read('basis')
@@ -1433,7 +1440,7 @@ class xgc1(object):
     class ff_mapping(xgc_mat):
         def __init__(self,ff_name):
                 fn       ='xgc.ff_'+ff_name+'.bp'
-                with adios2.open(fn,"r") as f:
+                with adios2_open(fn) as f:
                     nelement = f.read('nelement')
                     eindex   = f.read('eindex')-1
                     value    = f.read('value')
@@ -1543,7 +1550,7 @@ class xgc1(object):
     def write_dAs_ff_for_poincare(self,fnum):
         #load As
         fn='xgc.3d.%5.5d.bp'%fnum
-        with adios2.open(fn,"r") as f:
+        with adios2_open(fn) as f:
             As = f.read('apars').transpose()
             print('Read As[%d,%d] from '%(As.shape[0],As.shape[1]) +fn)
             print('As',As.shape)
@@ -1582,7 +1589,7 @@ class xgc1(object):
     # source_type = 'collision', 'heat_torque', 'neutral', 'pellet', 'radiation', 'total', total2'
     def source_simple(self, step, period, sp='i_', moments='energy', source_type='heat_torque'):
 
-        with adios2.open("xgc.fsourcediag.%5.5d.bp"%step,"rra") as f:
+        with adios2_open("xgc.fsourcediag.%5.5d.bp"%step) as f:
             var=f.read(sp+moments+'_change_'+source_type)
             den=f.read(sp+'density_' +source_type)
             vol=f.read(sp+'volume_'  +source_type) 
@@ -1601,8 +1608,6 @@ class xgc1(object):
         plt.xlabel('Normalized Pol. Flux')
         plt.title(sp+moments+'_'+source_type)
         #ax.set(xlabel='Normalized Pol. Flux')
-
-
 '''
 def load_prf(filename):
     import pandas as pd
