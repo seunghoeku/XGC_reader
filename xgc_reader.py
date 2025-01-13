@@ -63,6 +63,10 @@ class xgc1(object):
             self.path=os.getcwd()+'/'
             self.campaign_all_vars = {} # not usable when reading individual files locally
 
+    def close(self):
+        if self.campaign:
+            self.campaign.close()
+
     @classmethod
     def load_basic(cls, path='./'):
         os.chdir(path)
@@ -951,9 +955,18 @@ class xgc1(object):
             self.epsilon=fm.read(prefix+'epsilon')
             self.rmin=fm.read(prefix+'rmin')
             self.rmaj=fm.read(prefix+'rmaj')
-            self.region=fm.read(prefix+'region')
-            self.wedge_angle=fm.read(prefix+'wedge_angle')
-            self.delta_phi=fm.read(prefix+'delta_phi')
+            try:
+                self.region=fm.read(prefix+'region')
+            except:
+                print("No region in xgc.mesh.bp") 
+            try:
+                self.wedge_angle=fm.read(prefix+'wedge_angle')
+            except:
+                print("No wedge_angle in xgc.mesh.bp") 
+            try:
+                self.delta_phi=fm.read(prefix+'delta_phi')
+            except:
+                print("No delta_phi in xgc.mesh.bp") 
             self.nnodes = np.size(self.r) # same as n_n 
 
     class f0meshdata(object):    
