@@ -20,7 +20,7 @@ from functools import singledispatchmethod
 import adios2
 adios2_version_minor = int(adios2.__version__[2:adios2.__version__.find('.',2)])
 if adios2_version_minor < 10:
-   raise RuntimeError(f"Must use adios 2.10 or newer with the xgc_reader module, loaded 2.{adios2_version_minor}")
+   raise RuntimeError(f"Must use adios 2.10 or newer with the xgc_reader module, loaded 2.{adios2_version_minor}\n For 2.9.x version try adios_2_9_x branch")
 
 
 class xgc1(object):
@@ -51,11 +51,15 @@ class xgc1(object):
     def load_basic(cls, path='./'):
         os.chdir(path)
         cls.path=os.getcwd()+'/'
-        cls.load_unitsm(cls)
+        cls.load_units(cls)
         cls.load_oned(cls)
         cls.setup_mesh(cls)
         cls.setup_f0mesh(cls)
         cls.load_volumes(cls)
+
+    #for compatibility with older version
+    def load_unitsm(self):
+        self.load_units()
 
     def load_units(self):
         """
@@ -554,12 +558,15 @@ class xgc1(object):
     """
     def load_bfield(self):
         with adios2.FileReader(self.path+"xgc.bfield.bp") as f:
-
-            self.bfield = f.read('node_data[0]/values')
-            if(self.bfield.shape[0]==0):
-                self.bfield = f.read('/node_data[0]/values')
-            if(self.bfield.shape[0]==0):
+            try:
                 self.bfield = f.read('bfield')
+            except: # try older version of bfield
+                self.bfield = f.read('node_data[0]/values')
+
+            try:
+                self.jpar_bg = f.read('jpar_bg') # background current
+            except:
+                print('No jpar_bg in xgc.bfield.bp')
 
     """
         load the whole  .m file and return a dictionary contains all the entries.
@@ -756,8 +763,6 @@ class xgc1(object):
         def __init__(self,path):
             with adios2.FileReader(path+"xgc.volumes.bp") as f:
                 self.od=f.read("diag_1d_vol")
-                #try:
-                self.adj_eden=f.read("psn_adj_eden_vol")
 
     class turbdata(object):
         """
@@ -820,7 +825,8 @@ class xgc1(object):
         
         #load volume data
         if(not hasattr(self,"vol")):
-            self.vol=self.voldata(self.path)
+            #self.vol=self.voldata(self.path)
+            self.load_volumes()
         
         #check reading oneddiag?
         
