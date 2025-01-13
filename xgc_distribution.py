@@ -120,7 +120,6 @@ class XGCDistribution:
     #initialize from adios2 file like xgc.f0.00000.bp
     @classmethod
     def from_xgc_output(cls, filename, var_string='i_f', dir = './', time_step = 0, mass_au=2.0, charge_num = 1.0, has_electron=True, use_initial_moments=False):
-
         # read the specific species.
         if(var_string=='e_f'):
             idx = 0
@@ -139,8 +138,7 @@ class XGCDistribution:
             has_boltzmann = True
         else:
             has_boltzmann = False
-
-        with adios2.open(dir+'/'+filename,"rra") as file:
+        with adios2.FileReader(dir+'/'+filename) as file:
             it=time_step
             ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
             print('Reading data with shape:',np.shape(ftmp))
@@ -160,8 +158,7 @@ class XGCDistribution:
                     dpot = np.mean(dpot,axis=0) # toroidal average -- assume that they are axisymmetric.
             else:
                 dpot = None
-
-        with adios2.open(dir + 'xgc.f0.mesh.bp',"rra") as file:
+        with adios2.FileReader(dir + 'xgc.f0.mesh.bp') as file:
             vp_max = file.read('f0_vp_max')
             smu_max = file.read('f0_smu_max')
             vgrid = VelocityGrid(nvperp, nvpara, smu_max, vp_max)
@@ -191,7 +188,7 @@ class XGCDistribution:
     #initialize from distribution input file -- same format as that of save()
     @classmethod
     def from_xgc_input(cls, filename):
-        with adios2.open(filename, "rra") as fr:
+        with adios2.FileReader(filename) as fr:
             f_g = fr.read("f_g")
             den = fr.read("density")
             temp_ev = fr.read("temperature")
@@ -358,7 +355,7 @@ class XGCDistribution:
         if(self.has_maxwellian):
             self.remove_maxwellian()
 
-        with adios2.open(filename, mode='w') as fw:
+        with adios2.Stream(filename, mode='w') as fw:
             adios2_write_array(fw, "f_g", self.f_g) # maxwellian component is removed.
             adios2_write_array(fw, "density", self.den)
             adios2_write_array(fw, "temperature", self.temp_ev)
