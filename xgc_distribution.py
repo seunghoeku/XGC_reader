@@ -113,6 +113,7 @@ class XGCDistribution:
 
         if(has_boltzmann):
             self.dpot = dpot
+            self.density_with_boltzmann = self.den * self.exp_ad(self.dpot/self.temp_ev)
 
         self.check_nan()
 
