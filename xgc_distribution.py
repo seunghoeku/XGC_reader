@@ -199,8 +199,10 @@ class XGCDistribution:
             charge = fr.read("charge")
             vgrid = VelocityGrid(fr.read("nvperp"), fr.read("nvpara"), fr.read("vperp_max"), fr.read("vpara_max"))
             nnodes = fr.read("nnodes")
+            has_boltzmann=fr.read("has_boltzmann")
+            dpot = fr.read("dpot")
 
-        return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False)
+        return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False, has_boltzmann=has_boltzmann, dpot=dpot)
 
     # check nan values in the data
     def check_nan(self):
@@ -372,6 +374,7 @@ class XGCDistribution:
             fw.write("nnodes", np.array([self.nnodes], dtype=np.int32))
             if(self.has_boltzmann):
                 adios2_write_array(fw, "density_with_boltzmann", self.density_with_boltzmann) # This needs only for electron
+                adios2_write_array(fw, "dpot", self.dpot) # This needs only for electron
 
     # zero out f_g 
     def zero_out_fg(self):
