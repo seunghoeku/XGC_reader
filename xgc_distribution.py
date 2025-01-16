@@ -140,9 +140,9 @@ class XGCDistribution:
             has_boltzmann = False
         with adios2.FileReader(dir+'/'+filename) as file:
             it=time_step
-            ftmp=file.read(var_string,start=[],count=[],step_start=it, step_count=1)
+            ftmp=file.read(var_string) #,start=[],count=[],step_start=it, step_count=1)
             print('Reading data with shape:',np.shape(ftmp))
-            step=file.read('step',start=[],count=[],step_start=it, step_count=1)
+            step=file.read('step') #,start=[],count=[],step_start=it, step_count=1)
             ftmp = np.squeeze(ftmp) # remove time step dimension
             if(ftmp.ndim == 4):
                 ftmp = np.mean(ftmp,axis=0) # toroidal average
@@ -369,6 +369,8 @@ class XGCDistribution:
             fw.write("vpara_max", np.array([self.vgrid.vpara_max], dtype=np.float64))
             fw.write("vperp_max", np.array([self.vgrid.vperp_max], dtype=np.float64))
             fw.write("nnodes", np.array([self.nnodes], dtype=np.int32))
+            if(self.has_boltzmann):
+                adios2_write_array(fw, "density_with_boltzmann", self.density_with_boltzmann) # This needs only for electron
 
     # zero out f_g 
     def zero_out_fg(self):
