@@ -22,7 +22,23 @@ adios2_version_minor = int(adios2.__version__[2:adios2.__version__.find('.',2)])
 if adios2_version_minor < 10:
    raise RuntimeError(f"Must use adios 2.10 or newer with the xgc_reader module, loaded 2.{adios2_version_minor}\n For 2.9.x version try adios_2_9_x branch")
 
+def read_all_steps(f, var):
+    vars=f.available_variables()
+    stc=vars[var].get("AvailableStepsCount")
+    ct=vars[var].get("Shape")
+    stc=int(stc)
+    #print(var+':', ct, stc)
 
+    if ct!='':
+        c=[int(i) for i in ct.split(',')]  #
+        if len(c)==1 :
+            return np.reshape(f.read(var,start=[0],    count=c, step_selection=[0,stc]), [stc, c[0]])
+        elif len(c)==2 :
+            return np.reshape(f.read(var,start=[0,0],  count=c, step_selection=[0,stc]), [stc, c[0], c[1]])
+        elif ( len(c)==3 ):
+            return np.reshape(f.read(var,start=[0,0,0],count=c, step_selection=[0,stc]), [stc, c[0], c[1], c[2]])
+    else:
+        return f.read(var, step_selection=[0,stc])
 class xgc1(object):
     
     class cnst:
@@ -476,16 +492,16 @@ class xgc1(object):
                     v='rmajor'
                 else:
                     v='/bfield/rvec' 
-                ct=self.vars[v].get("Shape")
-                c=int(ct)
-                self.rmid=f.read(v,start=[0],count=[c],step_start=0, step_count=1)
+                #ct=self.vars[v].get("Shape")
+                #c=int(ct)
+                self.rmid=f.read(v) #,start=[0],count=[c],step_selection=[0,1])
                 if('psi_n' in self.vars):
                     v='psi_n'
                 else:
                     v='/bfield/psi_eq_x_psi'
-                ct=self.vars[v].get("Shape")
-                c=int(ct)
-                self.psin=f.read(v,start=[0],count=[c],step_start=0, step_count=1)
+                #ct=self.vars[v].get("Shape")
+                #c=int(ct)
+                self.psin=f.read(v) #,start=[0],count=[c],step_selection=[0,1])
 
 
     def load_heatdiag(self, **kwargs):
@@ -530,18 +546,179 @@ class xgc1(object):
             self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
             self.hl[i].post_heatdiag(ds)
             self.hl[i].total_heat(wedge_n)
+
+    #data class for each species data of heatdiag2
+    class datahl2_sp(object):
+        def __init__(self, prefix, f):
+            self.number = read_all_steps(f, prefix + '_number')
+            self.para_energy = read_all_steps(f, prefix + '_para_energy')
+            self.perp_energy = read_all_steps(f, prefix + '_perp_energy')
+            self.potential = read_all_steps(f, prefix + '_potential')
+
+    # data class for heatdiag2
+    class datahl2(object):
+        def __init__(self,filename, datahl2_sp):
+
+            prefix = ['e', 'i', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9']
+            with adios2.FileReader(filename) as f:
+                vars=f.available_variables()
+
+                self.time = read_all_steps(f, 'time')
+                self.step = read_all_steps(f, 'step')
+                self.tindex = read_all_steps(f, 'tindex')
+                self.ds = read_all_steps(f, 'ds')
+                self.psi = read_all_steps(f, 'psi')
+                self.r = read_all_steps(f, 'r')
+                self.z = read_all_steps(f, 'z')
+                self.strike_angle = read_all_steps(f, 'strike_angle')
+
+                # for each species read particle flux and energy flux as an array.
+                max_nsp = 10 # maximum number of species. Any larger integer should work.
+                self.sp=[]
+                for isp in range(max_nsp):
+                    if(prefix[isp]+'_number' in vars):
+                        self.sp.append( datahl2_sp(prefix[isp],f) )
+                    else:
+                        #print('No '+prefix[isp]+' species data in heatdiag2.')
+                        break
+                if(isp==0):
+                    print('No electron species data in heatdiag2. Nothing loaded.')
+
+                self.nsp = len(self.sp)
+                #set dt
+                self.dt = np.zeros_like(self.time)
+                self.dt[1:] = self.time[1:] - self.time[0:-1]
+                self.dt[0] = self.dt[1] # assume that the first time step is the same as the second one.
+                self.dt=self.dt[:,np.newaxis]
+
+        def get_midplane_conversion(self,psino,rmido, psix, wedge_n):
+            """
+            get midplane conversion of each species
+            """
+            self.rs = np.interp([1],psino,rmido)
+            self.rmidsepmm = (np.interp(self.psin,psino,rmido) - self.rs)  * 1E3
+
+        def get_parallel_flux(self):
+            for isp in range(self.nsp):
+                # heat flux q and particle flux gammas(g)
+                self.sp[isp].q = np.squeeze(self.sp[isp].para_energy[:,:,1:] + self.sp[isp].perp_energy[:,:,1:])/self.dt/self.area
+                self.sp[isp].g = np.squeeze(self.sp[isp].number[:,:,1:])/self.dt/self.area
+
+        def update_total_flux(self):
+            """
+            update total heat flux and particle flux
+            """
+            self.g_total = 0
+            self.q_total = 0
+            for isp in range(self.nsp):
+                self.g_total += self.sp[isp].g
+                self.q_total += self.sp[isp].q
+
+        def get_divertor(self, outer=True, lower=True):
+            """
+            get array index for inner and outer divertor
+            Assume the array index is conter-clockwise. --> need to consider the opposite cases
+            """
+            # find minimum psi location
+            sign_z = 1 if lower else -1
+            mask = (self.z-self.eq_axis_z) * sign_z < 0
+            i0 = np.argmin(np.where(mask, self.psin, np.inf))
+
+            # find maximum psi location
+            sign_r = 1 if outer else -1
+            mask = (self.r-self.eq_axis_r) * sign_r > 0
+            i1 = np.argmax(np.where(mask, self.psin, -np.inf))
+
+            return i0,i1
+
+        """
+            Functions for eich fit
+            q(x) =0.5*q0* exp( (0.5*s/lq)^2 - (x-dsep)/lq ) * erfc (0.5*s/lq - (x-dsep)/s)
+        """
+        def eich(self,xdata,q0,s,lq,dsep):
+            return 0.5*q0*np.exp((0.5*s/lq)**2-(xdata-dsep)/lq)*erfc(0.5*s/lq-(xdata-dsep)/s)
+
+        """
+            Eich fitting of one profile data
+        """
+        def eich_fit1(self,ydata,pmask=None):
+            q0init=np.max(ydata)
+            sinit=2 # 2mm
+            lqinit=1 # 1mm
+            dsepinit=0.1 # 0.1 mm
+
+            p0=np.array([q0init, sinit, lqinit, dsepinit])
+            if(pmask is None):
+                popt,pconv = curve_fit(self.eich,self.rmidsepmm,ydata,p0=p0)
+            else:
+                popt,pconv = curve_fit(self.eich,self.rmidsepmm[pmask],ydata[pmask],p0=p0)
+
+            return popt, pconv
+
+        """
+            perform fitting for all time steps.
+        """
+        def eich_fit_all(self,pmask=None):
+
+            self.lq_eich=np.zeros_like(self.time) #mem allocation
+            self.S_eich=np.zeros_like(self.lq_eich)
+            self.dsep_eich=np.zeros_like(self.lq_eich)
+
+            for i in range(self.time.size):
+                try :
+                    popt,pconv = self.eich_fit1(self.q_total[i,:],pmask=pmask)
+                except:
+                    popt=[0, 0, 0, 0]
+
+                self.lq_eich[i]= popt[2]
+                self.S_eich[i] = popt[1]
+                self.dsep_eich[i]= popt[3]
+
+    # load xgc.heatdiag2.bp and some postprocess
+    def load_heatdiag2(self):
+        self.hl2 = self.datahl2(self.path+"xgc.heatdiag2.bp", self.datahl2_sp)
+        #print('loading heatdiag2 done')
+
+        # post process
+        # calculate normalized psi and area at the target
+        wedge_n = self.unit_dic['sml_wedge_n']
+        it=-1 # keep the last one
+        self.hl2.psin=self.hl2.psi[it,:]/self.psix
+         #area of each segment with angle factor. 2pi * (r1+r2)/2 * ds / wedge_n * cos(angle)
+        self.hl2.area=np.pi*self.hl2.r[it,:]*self.hl2.ds[it,:]/wedge_n * np.cos(self.hl2.strike_angle[it,:])
+        self.hl2.area = self.hl2.area[np.newaxis,:]
+
+        # use bfieldm if loaded
+        if(hasattr(self, 'bfm')):
+            psino=self.bfm.psino
+            rmido=self.bfm.rmido
+        else: #get it from xgc.mesh.bp
+            psino, rmido = self.midplane_var(self.mesh.r)
+
+        # get midplane conversion
+        #plt.plot(psino,rmido)
+        self.hl2.get_midplane_conversion(psino, rmido, self.psix, wedge_n)
+        self.hl2.get_parallel_flux()
+        self.hl2.update_total_flux()
+
+        # get divertor index
+        self.hl2.eq_axis_r = self.eq_axis_r
+        self.hl2.eq_axis_z = self.eq_axis_z
+
+
     """
         Load xgc.bfieldm.bp -- midplane bfield info
     """
     def load_bfieldm(self):
-        self.bfm = self.databfm()
+        self.bfm = self.databfm(self.path)
         self.bfm.r0=self.unit_dic['eq_axis_r']
-
+        plt.plot(self.bfm.rmid)
         #get outside midplane only
         msk=np.argwhere(self.bfm.rmid>self.bfm.r0)
-        n0=msk[0,1]
-        self.bfm.rmido=self.bfm.rmid[0,n0:]
-        self.bfm.psino=self.bfm.psin[0,n0:]
+        print(msk)
+        n0=msk[0]
+        self.bfm.rmido=self.bfm.rmid[n0:]
+        self.bfm.psino=self.bfm.psin[n0:]
 
         #find separtrix index and r
         msk=np.argwhere(self.bfm.psino>1)
@@ -686,7 +863,7 @@ class xgc1(object):
                 self.psi_surf=fm.read(prefix+'psi_surf')
                 self.theta=fm.read(prefix+'theta')
                 self.m_max_surf=fm.read(prefix+'m_max_surf')
-
+            self.wall_nodes = fm.read(prefix+'grid_wall_nodes') -1 #zero based
             self.node_vol=fm.read(prefix+'node_vol')
             self.node_vol_nearest=fm.read(prefix+'node_vol_nearest')
             self.qsafety=fm.read(prefix+'qsafety')
@@ -1711,20 +1888,3 @@ class xgc1(object):
         plt.title(sp+moments+'_'+source_type)
         #ax.set(xlabel='Normalized Pol. Flux')
 
-
-r'''
-def load_prf(filename):
-    import pandas as pd
-    #space separated file 
-    df = pd.read_csv(filename, sep = r'\s{2,}',engine='python')
-    psi = df.index.values
-    psi = psi[0:-1]
-    var = df.values
-    var = var[0:-1]
-    return(psi,var)
-
-# read background profile
-psi_t, var_t=load_prf('../XGC-1_inputs/temp_cbc_w_0.15.prf')
-var_t = var_t[:,0]
-x.od.temp0 = np.interp(x.od.psi, psi_t, var_t)
-'''
