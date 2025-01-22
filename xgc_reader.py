@@ -550,10 +550,10 @@ class xgc1(object):
     #data class for each species data of heatdiag2
     class datahl2_sp(object):
         def __init__(self, prefix, f):
-            self.number = read_all_steps(f, prefix + '_number')
-            self.para_energy = read_all_steps(f, prefix + '_para_energy')
-            self.perp_energy = read_all_steps(f, prefix + '_perp_energy')
-            self.potential = read_all_steps(f, prefix + '_potential')
+            self.number = read_all_steps(f, prefix + '_number')[:,:,1:]
+            self.para_energy = read_all_steps(f, prefix + '_para_energy')[:,:,1:]
+            self.perp_energy = read_all_steps(f, prefix + '_perp_energy')[:,:,1:]
+            self.potential = read_all_steps(f, prefix + '_potential')[:,:,1:]
 
     # data class for heatdiag2
     class datahl2(object):
@@ -601,8 +601,8 @@ class xgc1(object):
         def get_parallel_flux(self):
             for isp in range(self.nsp):
                 # heat flux q and particle flux gammas(g)
-                self.sp[isp].q = np.squeeze(self.sp[isp].para_energy[:,:,1:] + self.sp[isp].perp_energy[:,:,1:])/self.dt/self.area
-                self.sp[isp].g = np.squeeze(self.sp[isp].number[:,:,1:])/self.dt/self.area
+                self.sp[isp].q = np.squeeze(self.sp[isp].para_energy + self.sp[isp].perp_energy)/self.dt/self.area
+                self.sp[isp].g = np.squeeze(self.sp[isp].number)/self.dt/self.area
 
         def update_total_flux(self):
             """
@@ -674,6 +674,19 @@ class xgc1(object):
                 self.S_eich[i] = popt[1]
                 self.dsep_eich[i]= popt[3]
 
+        """
+        getting total heat (radially integrated) to inner/outer divertor.
+        """
+        def total_heat(self,wedge_n, pmask=None):
+            if(pmask is None):
+                pmask=np.ones_like(self.rmidsepmm,dtype=bool)
+
+            for isp in range(self.nsp):
+                self.sp[isp].q_para_sum=np.sum(self.sp[isp].para_energy[:,:,pmask],axis=(1,2))[:,np.newaxis]*wedge_n/self.dt
+                self.sp[isp].q_perp_sum=np.sum(self.sp[isp].perp_energy[:,:,pmask],axis=(1,2))[:,np.newaxis]*wedge_n/self.dt
+                self.sp[isp].q_sum=self.sp[isp].q_para_sum+self.sp[isp].q_perp_sum
+                self.sp[isp].g_sum=np.sum(self.sp[isp].number[:,:,pmask],axis=(1,2))[:,np.newaxis]*wedge_n/self.dt
+
     # load xgc.heatdiag2.bp and some postprocess
     def load_heatdiag2(self):
         self.hl2 = self.datahl2(self.path+"xgc.heatdiag2.bp", self.datahl2_sp)
@@ -705,7 +718,68 @@ class xgc1(object):
         self.hl2.eq_axis_r = self.eq_axis_r
         self.hl2.eq_axis_z = self.eq_axis_z
 
+    # report basic analysis of heatdiag2.bp
+    # Need to specify the divertor region
+    # ndata is maximum number of data point to be considered.
+    # fit_mask is the mask for fitting. If None, all data will be used.
+    def report_heatdiag2(self, is_outer=True, is_lower=True, it=-1, xlim=[-5, 15], lq_ylim=[0, 10], ndata=1000000, fit_mask=None, sp_names=['e', 'i', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9']):
+        #select divertor
+        i0, i1 = self.hl2.get_divertor(outer=is_outer, lower=is_lower)
+        sign= 1 if (i0<i1) else -1 
+        i1 = i0 + sign*ndata if np.abs(i1-i0)>ndata else i1
 
+        md = np.arange(i0,i1,sign)
+        fig, ax = plt.subplots()
+        plt.plot(self.hl2.r[0,:],self.hl2.z[0,:])
+        plt.plot(self.hl2.r[0,md],self.hl2.z[0,md],'r-',linewidth=4,label='Divertor')
+        plt.legend()
+        self.show_sep(ax, style=',')
+        plt.axis('equal')
+
+        #plot total heat flux
+        self.hl2.total_heat(self.sml_wedge_n, pmask=md)
+        plt.subplots()
+        for isp in range(4):
+            plt.plot(self.hl2.time*1E3, self.hl2.sp[isp].q_sum/1E6, '.',label=sp_names[isp])
+        plt.xlabel('Time (ms)')
+        plt.ylabel('Total Heat Flux (MW)')
+        plt.legend()
+
+        #heat flux profile
+        plt.subplots()
+        for isp in range(4):
+            plt.plot(self.hl2.rmidsepmm[md], self.hl2.sp[isp].q[it,md]/1E6,label=sp_names[isp])
+        plt.plot(self.hl2.rmidsepmm[md], self.hl2.q_total[it,md]/1E6,label='Total')
+
+        plt.xlim(xlim[0], xlim[1])
+        plt.ylabel('Parallel heat flux [MW/$m^2$] at the divertor')
+        plt.xlabel('Midplane distance from separatrix [mm]')
+        plt.legend()
+
+        #fitting one time step
+        if fit_mask is None:
+            fit_mask = md
+        popt,pconv = self.hl2.eich_fit1(self.hl2.q_total[it,:], pmask=fit_mask)
+        eich = self.hl2.eich(self.hl2.rmidsepmm[md], popt[0], popt[1], popt[2], popt[3])
+        plt.subplots()
+        plt.plot(self.hl2.rmidsepmm[md], self.hl2.q_total[it,md],label='XGC')
+        plt.plot(self.hl2.rmidsepmm[md], eich,label='Eich Fit')
+        plt.xlim(xlim[0], xlim[1])
+        plt.title('$\\lambda_q$ = %3.3f mm, S=%3.3f mm, t=%3.3f ms'%(popt[2],popt[1],self.hl2.time[it]*1E3))
+        plt.ylabel('Parallel heat flux [W/$m^2$] at the divertor')
+        plt.xlabel('Midplane distance from separatrix [mm]')
+        plt.legend()
+
+        self.hl2.eich_fit_all(pmask=fit_mask)
+        plt.subplots()
+        plt.plot(self.hl2.time*1E3, self.hl2.lq_eich, '.', label='$\\lambda_q$')
+        plt.plot(self.hl2.time*1E3, self.hl2.S_eich, '.', label='S')
+        plt.ylim(lq_ylim[0], lq_ylim[1])
+        plt.xlabel('Time [ms]')
+        plt.ylabel('$\\lambda_q$, S [mm]')
+        plt.legend()
+
+        return md
     """
         Load xgc.bfieldm.bp -- midplane bfield info
     """
