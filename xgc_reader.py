@@ -98,8 +98,11 @@ class xgc1(object):
         self.unit_dic['sml_dt'] = f.read(prefix+'sml_dt')
         self.unit_dic['diag_1d_period'] = f.read(prefix+'diag_1d_period')
 
-        self.unit_dic['e_ptl_charge_eu'] = f.read(prefix+'e_ptl_charge_eu')
-        self.unit_dic['e_ptl_mass_au'] = f.read(prefix+'e_ptl_mass_au')
+        try:
+            self.unit_dic['e_ptl_charge_eu'] = f.read(prefix+'e_ptl_charge_eu')
+            self.unit_dic['e_ptl_mass_au'] = f.read(prefix+'e_ptl_mass_au')
+        except:
+            print('No electron particle charge/mass found in xgc.units.bp')
         self.unit_dic['eq_den_v1'] = f.read(prefix+'eq_den_v1')
         self.unit_dic['eq_tempi_v1'] = f.read(prefix+'eq_tempi_v1')
         self.unit_dic['i_ptl_charge_eu'] = f.read(prefix+'i_ptl_charge_eu')
