@@ -742,7 +742,7 @@ class xgc1(object):
         #plot total heat flux
         self.hl2.total_heat(self.sml_wedge_n, pmask=md)
         plt.subplots()
-        for isp in range(4):
+        for isp in range(len(self.hl2.sp)):
             plt.plot(self.hl2.time*1E3, self.hl2.sp[isp].q_sum/1E6, '.',label=sp_names[isp])
         plt.xlabel('Time (ms)')
         plt.ylabel('Total Heat Flux (MW)')
@@ -750,7 +750,7 @@ class xgc1(object):
 
         #heat flux profile
         plt.subplots()
-        for isp in range(4):
+        for isp in range(len(self.hl2.sp)):
             plt.plot(self.hl2.rmidsepmm[md], self.hl2.sp[isp].q[it,md]/1E6,label=sp_names[isp])
         plt.plot(self.hl2.rmidsepmm[md], self.hl2.q_total[it,md]/1E6,label='Total')
 
@@ -940,7 +940,10 @@ class xgc1(object):
                 self.psi_surf=fm.read(prefix+'psi_surf')
                 self.theta=fm.read(prefix+'theta')
                 self.m_max_surf=fm.read(prefix+'m_max_surf')
-            self.wall_nodes = fm.read(prefix+'grid_wall_nodes') -1 #zero based
+            try:
+                self.wall_nodes = fm.read(prefix+'grid_wall_nodes') -1 #zero based
+            except:
+                print("No wall_nodes in xgc.mesh.bp")
             self.node_vol=fm.read(prefix+'node_vol')
             self.node_vol_nearest=fm.read(prefix+'node_vol_nearest')
             self.qsafety=fm.read(prefix+'qsafety')
@@ -1108,6 +1111,10 @@ class xgc1(object):
         self.od.pfluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_flux_df_1d * dvdpall
         self.od.pfluxexbi = self.od.i_gc_density_df_1d * self.od.i_radial_flux_ExB_df_1d * dvdpall
         
+        self.od.mfluxi    = self.od.i_gc_density_df_1d * self.od.i_radial_mom_flux_df_1d * dvdpall # toroidal momentum flux
+        self.od.mfluxexbi = self.od.i_gc_density_df_1d * self.od.i_radial_mom_flux_ExB_df_1d * dvdpall
+        
+
         if(self.electron_on):
             self.od.efluxe    = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_df_1d * dvdpall
             self.od.efluxexbe = self.od.e_gc_density_df_1d * self.od.e_radial_en_flux_ExB_df_1d * dvdpall
@@ -1129,7 +1136,8 @@ class xgc1(object):
             self.od.cfluxexbi2 = self.od.i2gc_density_df_1d * self.od.Ti2 * ec * self.od.i2radial_flux_ExB_df_1d * dvdpall
             self.od.pfluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_flux_df_1d * dvdpall
             self.od.pfluxexbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_flux_ExB_df_1d * dvdpall
-                
+            self.od.mfluxi2    = self.od.i2gc_density_df_1d * self.od.i2radial_mom_flux_df_1d * dvdpall
+            self.od.mfluxexbi2 = self.od.i2gc_density_df_1d * self.od.i2radial_mom_flux_ExB_df_1d * dvdpall                
 
 
     def plot2d(self,filestr,varstr,**kwargs):
@@ -1965,3 +1973,11 @@ class xgc1(object):
         plt.title(sp+moments+'_'+source_type)
         #ax.set(xlabel='Normalized Pol. Flux')
 
+    # gyroradius calculation
+    # t_ev: temperature in eV (can be array)
+    # b: magnetic field in Tesla (can be array)
+    # mass_au: mass in atomic unit (scalar)
+    # charge_eu: charge in electron unit (scalar)
+    def gyro_radius(self, t_ev, b, mass_au, charge_eu):
+        mass = mass_au * self.cnst.protmass
+        return 1/(charge_eu * b) * np.sqrt(mass*t_ev/self.cnst.echarge)
