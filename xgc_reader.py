@@ -236,7 +236,7 @@ class xgc1(object):
             vs = {k:v for (k,v) in vars.items() if k.startswith(filename)}
             self.load_data(f, vs, len(filename+"/"))
 
-        def load_data(self, f: adios2.FileReader, vars: dict, prefix_len: int):
+        def load_data_slow(self, f: adios2.FileReader, vars: dict, prefix_len: int):
             for v in vars:
                 stc=vars[v].get("AvailableStepsCount")
                 ct=vars[v].get("Shape")
@@ -248,6 +248,26 @@ class xgc1(object):
                     setattr(self,v[prefix_len:],np.reshape(data, [stc, ct]))
                 elif v!='gsamples' and v!='samples' :
                     setattr(self,v[prefix_len:],f.read(v,start=[], count=[], step_selection=[0, stc])) #null list for scalar
+
+        def load_data(self, f: adios2.FileReader, vars: dict, prefix_len: int):
+            bIO = f.io.impl  # adios2.bindings.adios2_bindings.IO object with C++ like functions
+            bEngine = f.engine.impl
+            for v in vars:
+                bVar = bIO.InquireVariable(v)
+                countList = bVar.Count()
+                stc = bVar.Steps()
+                if countList:
+                    ct = countList[0]
+                    # do Deferred Gets for reading many vars at once
+                    # 'data' will be filled after the PerformGets() call
+                    data = np.zeros([stc, ct], dtype=np.double)
+                    setattr(self,v[prefix_len:],data)
+                    bVar.SetSelection([ [0], [ct] ]) 
+                    bVar.SetStepSelection([0, stc]) 
+                    bEngine.Get(bVar, data, adios2.bindings.Mode.Deferred)
+                elif v!='gsamples' and v!='samples' :
+                    setattr(self,v[prefix_len:],f.read(v,start=[], count=[], step_selection=[0, stc])) #null list for scalar
+            bEngine.PerformGets()
 
         def d_dpsi(self,var,psi):
             """
