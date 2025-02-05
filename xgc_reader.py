@@ -817,6 +817,11 @@ class xgc1(object):
             except: # try older version of bfield
                 self.bfield = f.read('node_data[0]/values')
 
+            if(self.bfield.shape[0]!=3): # not 3xN
+                self.bfield = np.transpose(self.bfield)
+                print('bfield shape is :', self.bfield.shape)
+            
+    
             try:
                 self.jpar_bg = f.read('jpar_bg') # background current
             except:
@@ -951,9 +956,18 @@ class xgc1(object):
             self.epsilon=fm.read(prefix+'epsilon')
             self.rmin=fm.read(prefix+'rmin')
             self.rmaj=fm.read(prefix+'rmaj')
-            self.region=fm.read(prefix+'region')
-            self.wedge_angle=fm.read(prefix+'wedge_angle')
-            self.delta_phi=fm.read(prefix+'delta_phi')
+            try:
+                self.region=fm.read(prefix+'region')
+            except:
+                print("No region in xgc.mesh.bp")
+            try:
+                self.wedge_angle=fm.read(prefix+'wedge_angle')
+            except:
+                print("No wedge_angle in xgc.mesh.bp")
+            try:
+                self.delta_phi=fm.read(prefix+'delta_phi')
+            except:
+                print("No delta_phi in xgc.mesh.bp")
             self.nnodes = np.size(self.r) # same as n_n 
 
     class f0meshdata(object):    
@@ -1304,7 +1318,7 @@ class xgc1(object):
     '''
     contour plot of one plane quantity
     '''
-    def contourf_one_var(self, fig, ax, var, title='None', vm='None', cmap='jet', levels=150):
+    def contourf_one_var(self, fig, ax, var, title='None', vm='None', cmap='jet', levels=150, cbar=True):
         if(vm=='None'):
             cf=ax.tricontourf(self.mesh.triobj,var, cmap=cmap,extend='both',levels=levels) #,vmin=-vm, vmax=vm)
         elif(vm=='Sigma2'):
@@ -1315,7 +1329,8 @@ class xgc1(object):
         else:
             var2=np.minimum(vm,np.maximum(-vm,var))
             cf=ax.tricontourf(self.mesh.triobj,var2, cmap=cmap,extend='both',levels=levels,vmin=-vm, vmax=vm)
-        cbar = fig.colorbar(cf, ax=ax)
+        if(cbar):
+            cbar = fig.colorbar(cf, ax=ax)
         if(title != 'None'):
             ax.set_title(title)
 
@@ -1882,7 +1897,7 @@ class xgc1(object):
         nnode = field.shape[0]
         if nnode!=self.ff_1dp_fwd.mat.shape[0]:
             return -1
-        sgn   = np.sign(self.bfield[0,2])
+        sgn   = np.sign(self.bfield[2,0]) # toroidal field at the magnetic axis
         l_l   = self.ff_1dp_rev.dl
         l_r   = self.ff_1dp_fwd.dl
         l_tot = l_r+l_l
