@@ -79,7 +79,10 @@ class xgc1(object):
 
     #for compatibility with older version
     def load_unitsm(self):
-        self.load_units()
+        try:
+            self.load_units()
+        except:
+            self.load_unitsm_old
 
     def load_units(self):
         """
@@ -132,6 +135,22 @@ class xgc1(object):
         if not self.campaign:
             f.close()
 
+    
+    def load_unitsm_old(self):
+        """
+        read in units.m file -- for backward compatibility. not needed for new (>2024?) XGC 
+        """
+        self.unit_file = self.path+'units.m'
+        self.unit_dic = self.load_m(self.unit_file) #actual reading routine
+        self.psix=self.unit_dic['psi_x']
+        self.eq_x_r = self.unit_dic['eq_x_r']
+        self.eq_x_z = self.unit_dic['eq_x_z']
+        self.eq_axis_r = self.unit_dic['eq_axis_r']
+        self.eq_axis_z = self.unit_dic['eq_axis_z']
+        self.eq_axis_b = self.unit_dic['eq_axis_b']
+        self.sml_dt = self.unit_dic['sml_dt']
+        self.sml_wedge_n = self.unit_dic['sml_wedge_n']
+        self.diag_1d_period = self.unit_dic['diag_1d_period']
 
     def load_oned(self, i_mass=2, i2mass=12):
         """
@@ -1595,9 +1614,88 @@ class xgc1(object):
         return msep
     
     '''
+    Turbulence intensity
+    '''
+    def turb_intensity(self,istart, iend, skip, vartype='f3d_eden', mode='all'):
+        
+        # file type
+        if(vartype=='f3d_eden'): 
+            # use dn/n0
+            fname='f3d'
+            vname='e_den'
+        elif(vartype=='3d_dpot'): 
+            # use dphi/Te
+            fname='3d'
+            vname='dpot'
+        elif(vartype=='f3d_iTperp'):
+            # use dTperp/Ti0
+            fname='f3d'
+            vname='i_T_perp'
+        else:
+            print('unknown vartype type')
+            return
+
+        print('using '+vname+' of '+fname)
+        err_msg_count =0 
+        msk = np.zeros_like(self.mesh.z) +1
+        if(mode=='all'):
+            # use all planes
+            pass    
+        elif(mode=='upper'):
+            # use upper half planes
+            msk[self.mesh.z < self.eq_axis_z] = 0
+        elif(mode=='lower'):
+            # use lower half planes
+            msk[self.mesh.z > self.eq_axis_z] = 0
+
+
+        pbar = tqdm(range(istart,iend,skip))
+        for count, i in enumerate(pbar):
+            with adios2.FileReader('xgc.'+fname+'.%5.5d.bp' % (i)) as f:
+                it=int( (i-istart)/skip )
+                var=f.read(vname)
+                time1=f.read('time')
+                if(var.shape[0]>200): # 200 is maximum plane number
+                    var=np.transpose(var) 
+
+            if(fname=='f3d'): # variables has f_0. Normalization will be toroidal average.
+                var2=var-np.mean(var,axis=0)  # delta-n or delta-T
+                var0=np.mean(var,axis=0)      # n(n=0) or T0(n=0)
+            else: 
+                # '3d' -- var is dpot
+                var2=var-np.mean(var,axis=0)
+                try:
+                    var0=self.f0.te0
+                except:
+                    if(err_msg_count==0):
+                        print('f0.te0 is not available. Use 1 for normalization')
+                        err_msg_count=1
+                    var0=1
+
+            dns = var2*var2
+            dns = np.mean(dns,axis=0) # toroidal average
+            dns = dns/(var0*var0)     # normalization with n0
+            dns_surf = self.fsa_simple(dns*msk) # flux surface average with masking
+            
+            #print(it)
+            if(count==0):
+                turb_int=dns_surf
+                time=time1
+            else:
+                turb_int = np.vstack((turb_int, dns_surf))
+                time = np.append(time, time1)
+                
+        #fft and average
+        return turb_int, time
+
+
+    '''
     Basic analysis
     '''
-    def profile_reports(self,i_name='Main ion',i2_name='Impurity', init_idx=0, end_idx=-1, edge_lim=[0.85,1.05]):
+    def profile_reports(self,i_name='Main ion',i2_name='Impurity', init_idx=0, end_idx=-1, edge_lim=[0.85,1.05]):       #wrapper for backward compatibility
+        self.report_profiles(i_name=i_name, i2_name=i2_name, init_idx=init_idx, end_idx=end_idx, edge_lim=edge_lim)
+
+    def report_profiles(self,i_name='Main ion',i2_name='Impurity', init_idx=0, end_idx=-1, edge_lim=[0.85,1.05]):
 
         #show initial profiles
         #temperature
@@ -1677,8 +1775,10 @@ class xgc1(object):
 
 
 
-
     def turb_2d_report(self,i_name='Main ion',i2_name='Impurity', pm=slice(0,-1),tm=slice(0,-1), wnorm=1E6, cmap='jet'):
+        self.report_turb_2d(i_name=i_name,i2_name=i2_name, pm=pm,tm=tm, wnorm=wnorm, cmap=cmap)
+
+    def report_turb_2d(self,i_name='Main ion',i2_name='Impurity', pm=slice(0,-1),tm=slice(0,-1), wnorm=1E6, cmap='jet'):
 
 
         # elec heat flux
