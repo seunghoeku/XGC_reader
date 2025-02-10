@@ -82,7 +82,7 @@ class xgc1(object):
         try:
             self.load_units()
         except:
-            self.load_unitsm_old
+            self.load_unitsm_old()
 
     def load_units(self):
         """
