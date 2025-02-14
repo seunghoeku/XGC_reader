@@ -1430,26 +1430,28 @@ class xgc1(object):
     ''' 
     functions for k-w power spectrum
     '''
-    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half):
+    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False):
         #find line segment
         ms, psi0, length = self.find_line_segment(ns_half, psi_target)
-        #get total distance of the line segment
-        dist=np.sum(np.sqrt( (self.mesh.r[ms[0:-1]]-self.mesh.r[ms[1:]])**2 + (self.mesh.z[ms[0:-1]]-self.mesh.z[ms[1:]])**2 ))
 
-        print('psi0=',psi0,'length=',length)
+        print('psi0=',psi0,'length=',length) 
         print('getting ExB velocity...')
         #get exb
-        v_exb = self.find_exb_velocity(istart, iend, skip_exb, ms)
+        if(old_vexb):
+            v_exb = self.find_exb_velocity(istart, iend, skip_exb, ms)
+        else:
+            v_exb = self.find_exb_velocity2(istart, iend, skip_exb, ms)
+
         print('v_exb=',v_exb,' m/s')
         #reading data
         print('reading 3d data...')
         dpot4,po,time = self.reading_3d_data(istart, iend, skip, ms)
 
         #prepare parameters for plot
-        k, omega = self.prepare_plots(dist,ms,time)
+        k, omega = self.prepare_plots(length,ms,time)
         print('done.')
 
-        return ms, psi0, v_exb, dpot4, po, k, omega, time
+        return ms, psi0, v_exb, dpot4, po, k, omega, time, length
 
     
     # Find line segment of midplane with psi=psi_target or nearest flux surface
@@ -1524,6 +1526,37 @@ class xgc1(object):
         v_exb = (pol_vi + pol_ve)/2
         print('pol_vi=', pol_vi, 'pol_ve=', pol_ve)
         return v_exb
+
+    '''
+    find avearage ExB velocity of line segment defined with node index ms
+    It reads epsi of xgc.3d.*.bp from index (istart, iend, skip)
+    and calculate ExB velocity in time.
+    '''
+    def find_exb_velocity2(self, istart, iend, skip, ms, only_average=True):
+
+        bt = self.bfield[2,ms]
+        b2 = np.sqrt(self.bfield[0,ms]**2 + self.bfield[1,ms]**2 + self.bfield[2,ms]**2)
+
+        pbar = tqdm(range(istart,iend,skip))
+        for count, istep in enumerate(pbar):
+            with adios2.FileReader('xgc.3d.%5.5d.bp' % (istep)) as f:
+                epsi=f.read('epsi')
+                time1=f.read('time')
+                v_exb1=epsi[:,ms]*bt/b2
+                v_exb1=v_exb1[np.newaxis,:,:]
+
+            if(count==0):
+                v_exb = v_exb1
+                time = time1
+            else:
+                v_exb = np.concatenate((v_exb,v_exb1),axis=0)
+                time = np.vstack((time,time1))
+        if(only_average):
+            v_exb = np.mean(v_exb,axis=(0,1,2))
+            return v_exb
+        else:
+            return v_exb, time
+
 
     '''
     Reading 3D dpot data of time index (istart, iend, skip) and
@@ -1878,12 +1911,20 @@ class xgc1(object):
 
     # read one variable from filestr -- for 3d and f3d files. 
     # it might work with other files, too.
-    def read_one_ad2_var(self,filestr,varstr):
+    def read_one_ad2_var(self,filestr,varstr, with_time=False):
         f=adios2.FileReader(filestr)
         #f.__next__()
         var=f.read(varstr)
+        if(with_time):
+            try:
+                time=f.read('time')
+            except:
+                time=0
         f.close()
-        return var
+        if(with_time):
+            return var, time
+        else:
+            return var
 
 
     class xgc_mat(object):
