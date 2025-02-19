@@ -91,7 +91,7 @@ zlim    Z of limiter points, 1D array [meter]
 import numpy as np
 import matplotlib.pyplot as plt
 
-def geqdsk_reader(filename):
+def geqdsk_reader(filename, overide_wall=None):
     from freeqdsk import geqdsk
     
     with open(filename, "r") as f:
@@ -107,8 +107,26 @@ def geqdsk_reader(filename):
     g['rgrid'] = g['rmin'] + np.arange(mw) * dr
     g['zgrid'] = g['zmin'] + np.arange(mh) * dz
 
+    if overide_wall is not None:
+        read_wall(g,overide_wall)
+    
     add_values(g)
     return g
+
+def read_wall(g, filename):
+    #read wall data
+    with open(filename, "r") as f:
+        [n] = map(int, f.readline().strip().split())
+        #allocate array
+        r=np.zeros(n)
+        z=np.zeros(n)
+
+        for l in range(n):
+            [r[l], z[l]]=map(float, f.readline().strip().split() )
+
+        g['rlim']=r
+        g['zlim']=z
+
 
 def add_values(g):
     #define spline function
@@ -117,34 +135,42 @@ def add_values(g):
     
     #midplane
     nrmid = 1000
-    rmid_max = np.max(g['rlim'])  # maximum limiter r is maximum of rmid
-    drmid = (rmid_max - g['rmagx']) / (nrmid - 1)
-    rmid = g['rmagx'] + drmid * np.arange(nrmid)
-    zmid = g['zmagx']
-    psimid = psi_rbs(rmid, zmid).flatten()
-    g['rmid']=rmid
-    g['psimid']=psimid
-    #plt.plot(rmid,psimid)
-    
-    #find midplane r
-    interp_func = interp1d(psimid, rmid)
-    rmid_sep = interp_func(g['sibdry'])
-    g['rmid_sep'] = rmid_sep
+    try:
+        rmid_max = np.max(g['rlim'])  # maximum limiter r is maximum of rmid
+        has_wall = True        
+    except:
+        print('Warning: No limiter data in GEQDSK file. Use overide_wall="[FILE_NAME]" to provide wall data')
+        has_wall = False
 
-    #bp at (rmid_sep,zmid)
-    dpdr=psi_rbs.partial_derivative(1,0)
-    dpdz=psi_rbs.partial_derivative(0,1)
-    dpdr_ms=dpdr(rmid_sep,zmid)
-    dpdz_ms=dpdz(rmid_sep,zmid)
-    bp_midsep = np.sqrt(dpdr_ms**2 + dpdz_ms**2)/rmid_sep
-    g['bp_midsep']=bp_midsep
+    if has_wall:
+        drmid = (rmid_max - g['rmagx']) / (nrmid - 1)
+        rmid = g['rmagx'] + drmid * np.arange(nrmid)
+        zmid = g['zmagx']
+        psimid = psi_rbs(rmid, zmid).flatten()
+        g['rmid']=rmid
+        g['psimid']=psimid
+        #plt.plot(rmid,psimid)
+
+        #find midplane r
+        interp_func = interp1d(psimid, rmid)
+        rmid_sep = interp_func(g['sibdry'])
+        g['rmid_sep'] = rmid_sep
+
+        #bp at (rmid_sep,zmid)
+        dpdr=psi_rbs.partial_derivative(1,0)
+        dpdz=psi_rbs.partial_derivative(0,1)
+        dpdr_ms=dpdr(rmid_sep,zmid)
+        dpdz_ms=dpdz(rmid_sep,zmid)
+        bp_midsep = np.sqrt(dpdr_ms**2 + dpdz_ms**2)/rmid_sep
+        g['bp_midsep']=bp_midsep
+
+        # find Bt at midplane - separatrix
+        g['BT_midsep'] = g['fpol'][-1] / rmid_sep
+        g['a_out'] = rmid_sep - g['rmagx']
+
 
     # Other quantities
-    g['B0'] = g['fpol'][0] / g['rmagx']
-    
-    # find Bt at midplane - separatrix
-    g['BT_midsep'] = g['fpol'][-1] / rmid_sep
-    g['a_out'] = rmid_sep - g['rmagx']
+    g['B0'] = g['fpol'][0] / g['rmagx']    
     g['a_all'] = (np.max(g['rbdry']) - np.min(g['rbdry'])) / 2
     g['n_gb'] = g['cpasma'] / 1E6 / (np.pi * g['a_all']**2) #g['cpasma'] is current
     return 

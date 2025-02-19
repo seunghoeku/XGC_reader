@@ -62,7 +62,7 @@ class eqd(object):
             #post process
             # setup rgrid and zgrid
             self.rgrid=np.linspace(self.min_r, self.max_r, num=self.mr)
-            self.zgrid=np.linspace(self.min_z, self.max_z, num=self.mr)
+            self.zgrid=np.linspace(self.min_z, self.max_z, num=self.mz)
 
     #writing eqd file. It requires freeqdsk 
     def write_eqd(self,filename):
