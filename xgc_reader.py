@@ -987,7 +987,12 @@ class xgc1(object):
                 self.surf_len=fm.read(prefix+'surf_len')
                 self.psi_surf=fm.read(prefix+'psi_surf')
                 self.theta=fm.read(prefix+'theta')
+
+            try:
                 self.m_max_surf=fm.read(prefix+'m_max_surf')
+            except:
+                print("No m_max_surf in xgc.mesh.bp")
+
             try:
                 self.wall_nodes = fm.read(prefix+'grid_wall_nodes') -1 #zero based
             except:
@@ -1030,18 +1035,35 @@ class xgc1(object):
         def load_f0mesh(self, f: adios2.FileReader, prefix=''):
             T_ev=f.read(prefix+'f0_T_ev')
             den0=f.read(prefix+'f0_den')
-            flow=f.read(prefix+'f0_flow')
-            if(flow.size==0):
+            try:
+                flow=f.read(prefix+'f0_flow')
+            except:
+                print("No flow in xgc.f0.mesh.bp") 
                 flow=np.zeros_like(den0) #zero flow when flow is not written
-            self.ni0=den0[-1,:]
-            self.ti0=T_ev[-1,:]  # last species. need update for multi ion
-            self.ui0=flow[-1,:]
+
+            if(len(den0.shape)>1):
+                self.ni0=den0[-1,:]
+                self.ti0=T_ev[-1,:]  # last species. need update for multi ion
+                self.ui0=flow[-1,:]
+            else:
+                # old format
+                self.ni0=den0
+                self.ti0=T_ev
+                self.ui0=flow
+                self.te0=den0
+                
             if(T_ev.shape[0]>=2):
                 self.te0=T_ev[0,:]
-                self.ne0=den0[0,:]
-                self.ue0=flow[0,:]
+                try:
+                    self.ne0=den0[0,:]
+                    self.ue0=flow[0,:]
+                except:
+                    # old format
+                    self.ne0=den0
+                    self.ue0=flow
             if(T_ev.shape[0]>=3):
                 print('multi species - ni0, ti0, ui0 are last species')
+
 
             self.dsmu=f.read(prefix+'f0_dsmu')
             self.dvp =f.read(prefix+'f0_dvp')
