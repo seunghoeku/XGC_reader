@@ -1567,12 +1567,12 @@ class xgc1(object):
         pbar = tqdm(range(istart,iend,skip))
         for count, istep in enumerate(pbar):
             with adios2.FileReader('xgc.3d.%5.5d.bp' % (istep)) as f:
-                epsi=f.read('epsi')
+                epsi=f.read('epsi') # E_r
                 try:
                     time1=f.read('time')
                 except:
                     time1=istep*self.sml_dt
-                v_exb1=epsi[:,ms]*bt/b2
+                v_exb1=epsi[:,ms]*bt/b2 # ExB velocity
                 v_exb1=v_exb1[np.newaxis,:,:]
 
             if(count==0):
@@ -1583,9 +1583,9 @@ class xgc1(object):
                 time = np.vstack((time,time1))
         if(only_average):
             v_exb = np.mean(v_exb,axis=(0,1,2))
-            return v_exb
+            return v_exb # only return averaged ExB velocity
         else:
-            return v_exb, time
+            return v_exb, time # return all ExB velocity in (time, toroidal angle, poloidal index) and time array
 
 
     '''
