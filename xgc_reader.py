@@ -316,15 +316,15 @@ class xgc1(object):
                     if ct!='':
                         c=[int(i) for i in ct.split(',')]  #
                         if len(c)==1 :  # time and step 
-                            setattr(self,v,f.read(v,start=[0], count=c, step_start=0, step_count=stc))
+                            setattr(self,v,f.read(v,start=[0], count=c, step_selection=[0, stc]))
                         elif len(c)==2 : # c[0] is irg
-                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0], count=[1,c[1]], step_start=0, step_count=stc)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0], count=[1,c[1]], step_selection=[0, stc])))
                         elif ( len(c)==3 & read_rz_all ) : # ct[0] is irg, read only 
-                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=0, step_count=stc)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_selection=[0, stc])))
                         elif ( len(c)==3 ) : # read_rz_all is false. ct[0] is irg, read only 
-                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_start=stc-1, step_count=1)))
+                            setattr(self,v,np.squeeze(f.read(v,start=[irg,0,0], count=[1,c[1],c[2]], step_selection=[stc-1, 1])))
                     elif v!='zsamples' and v!='rsamples':
-                        setattr(self,v,f.read(v,start=[], count=[], step_start=0, step_count=stc)) #null list for scalar
+                        setattr(self,v,f.read(v,start=[], count=[], step_selection=[0, stc])) #null list for scalar
                 #keep last time step
                 self.r=self.r[-1,:]
                 self.z=self.z[-1,:]
@@ -834,9 +834,10 @@ class xgc1(object):
         self.bfm.r0=self.unit_dic['eq_axis_r']
         plt.plot(self.bfm.rmid)
         #get outside midplane only
-        msk=np.argwhere(self.bfm.rmid>self.bfm.r0)
-        print(msk)
-        n0=msk[0]
+        #msk=np.argwhere(self.bfm.rmid>self.bfm.r0)
+        #print(msk)
+        #n0=msk[0]
+        n0 = np.nonzero(self.bfm.rmid > self.bfm.r0)[0][0]
         self.bfm.rmido=self.bfm.rmid[n0:]
         self.bfm.psino=self.bfm.psin[n0:]
 
@@ -858,7 +859,7 @@ class xgc1(object):
             try:
                 self.bfield = f.read('bfield')
             except: # try older version of bfield
-                self.bfield = f.read('node_data[0]/values')
+                self.bfield = f.read('/node_data[0]/values')
 
             if(self.bfield.shape[0]!=3): # not 3xN
                 self.bfield = np.transpose(self.bfield)
@@ -985,7 +986,11 @@ class xgc1(object):
                 print("No surf_idx in xgc.mesh.bp") 
             else:
                 self.surf_len=fm.read(prefix+'surf_len')
-                self.psi_surf=fm.read(prefix+'psi_surf')
+                try:
+                    self.psi_surf=fm.read(prefix+'psi_surf')
+                except:
+                    print("failed to read psi_surf in xgc.mesh.bp")
+                    self.psi_surf=np.arange(0,1,1/self.surf_len.size)
                 self.theta=fm.read(prefix+'theta')
 
             try:
@@ -1563,7 +1568,10 @@ class xgc1(object):
         for count, istep in enumerate(pbar):
             with adios2.FileReader('xgc.3d.%5.5d.bp' % (istep)) as f:
                 epsi=f.read('epsi')
-                time1=f.read('time')
+                try:
+                    time1=f.read('time')
+                except:
+                    time1=istep*self.sml_dt
                 v_exb1=epsi[:,ms]*bt/b2
                 v_exb1=v_exb1[np.newaxis,:,:]
 
@@ -1605,7 +1613,10 @@ class xgc1(object):
             f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
             it=int( (i-istart)/skip )
             dpot=f.read('dpot')
-            time1=f.read('time')
+            try:
+                time1=f.read('time')
+            except:
+                time1=i*self.sml_dt
             f.close()
             dpot2=dpot-np.mean(dpot,axis=0)
             dpot3=dpot2[:,ms]
