@@ -1913,14 +1913,14 @@ class xgc1(object):
 
     # midplane value interpolation
     # need array operation if var has toroidal angle
-    def midplane_var(self, var, inboard=False, nr=300):
-        maxr = self.mesh.r.max()
-        minr = self.mesh.r.min()
+    def midplane_var(self, var, inboard=False, nr=300, delta_r_axis = 0., delta_r_edge = 0., return_rmid=False):
+        maxr = self.mesh.r.max() - delta_r_edge
+        minr = self.mesh.r.min() + delta_r_edge
 
         if(inboard):
-            r_mid = np.linspace(minr, self.eq_axis_r, nr)
+            r_mid = np.linspace(minr, self.eq_axis_r-delta_r_axis, nr)
         else:
-            r_mid = np.linspace(self.eq_axis_r, maxr, nr)
+            r_mid = np.linspace(self.eq_axis_r+delta_r_axis, maxr, nr)
         z_mid = np.linspace(self.eq_axis_z, self.eq_axis_z, nr)
         psi_tri = LinearTriInterpolator(self.mesh.triobj,self.mesh.psi/self.psix)
         psi_mid = psi_tri(r_mid, z_mid )
@@ -1928,7 +1928,10 @@ class xgc1(object):
         var_tri = LinearTriInterpolator(self.mesh.triobj,var)
         var_mid = var_tri(r_mid, z_mid)
 
-        return psi_mid, var_mid
+        if(return_rmid):
+            return psi_mid, var_mid, r_mid
+        else:   
+            return psi_mid, var_mid
 
     #get GAM anlytic GAM frequency based on 1D diag and psi_surf
     def gam_freq_analytic(self):
