@@ -164,7 +164,7 @@ class eqd_class(object):
                 print("Warning: eqd.rbdry not found. Skipping boundary data.")
 
 
-def get_eqd_from_eqdsk(g):
+def get_eqd_from_eqdsk(g, search_radius=0.1):
     """
     Create an eqd_class object from
     the dictionary of eqdsk data.
@@ -182,7 +182,7 @@ def get_eqd_from_eqdsk(g):
 
     #refine the magnetic axis
     #  - find the local extrema or saddle near the magnetic axis of eqdsk.
-    raf, zaf, psiaf  = refine_axis_or_x_spline_optimize(g['rgrid'], g['zgrid'], g['psi'], g['rmagx'], g['zmagx'], search_radius=0.1)
+    raf, zaf, psiaf  = refine_axis_or_x_spline_optimize(g['rgrid'], g['zgrid'], g['psi'], g['rmagx'], g['zmagx'], search_radius=search_radius)
     print(f"Refined magnetic axis: ({raf}, {zaf}, {psiaf})")
     print(f"Initial magnetic axis: ({g['rmagx']}, {g['zmagx']}, {g['simagx']})")
     eqd.axis_r=raf
@@ -196,7 +196,7 @@ def get_eqd_from_eqdsk(g):
     rx = g['rbdry'][ix]
     zx = g['zbdry'][ix]
 
-    rxf, zxf, psixf  = refine_axis_or_x_spline_optimize(g['rgrid'], g['zgrid'], g['psi'], rx, zx, search_radius=0.1)
+    rxf, zxf, psixf  = refine_axis_or_x_spline_optimize(g['rgrid'], g['zgrid'], g['psi'], rx, zx, search_radius=search_radius)
     print(f"Refined X-point: ({rxf}, {zxf}, {psixf})")
     print(f"Initial X-point: ({rx}, {zx}, {g['sibdry']})")
 
@@ -234,7 +234,7 @@ import numpy as np
 from scipy.interpolate import RectBivariateSpline
 from scipy.optimize import minimize
 
-def refine_axis_or_x_spline_optimize(rgrid, zgrid, psi, rmaxis, zmaxis, search_radius=0.1):
+def refine_axis_or_x_spline_optimize(rgrid, zgrid, psi, rmaxis, zmaxis, search_radius=0.2):
     """
     Finds the local extrema of psi near (rmaxis, zmaxis) using 2D cubic spline interpolation
     and scipy.optimize.minimize to refine the magnetic axis location.
