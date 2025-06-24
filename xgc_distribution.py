@@ -379,6 +379,7 @@ class XGCDistribution:
             fw.write("nnodes", np.array([self.nnodes], dtype=np.int32))
             if(self.has_boltzmann):
                 adios2_write_array(fw, "density_with_boltzmann", self.density_with_boltzmann) # This needs only for electron
+            if hasattr(self, "dpot"):
                 adios2_write_array(fw, "dpot", self.dpot) # This needs only for electron
 
     # zero out f_g 
