@@ -321,6 +321,11 @@ class XGCDistribution:
                     en[en<0]=0
                 tmp_exp = np.exp(-en)
                 tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+
+                # mimic `vgrid.inv_mu0_factor = 1/3` correction for ivr==0
+                if i==0:
+                    tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.dvperp/3. * np.sqrt(self.fg_temp_ev)
+
                 if(self.has_boltzmann):
                     tmp = tmp * self.exp_ad(self.dpot/self.temp_ev)
 
@@ -530,7 +535,11 @@ class XGCDistribution:
                     en[en<0]=0
                 tmp_exp = np.exp(-en)
                 tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
-                
+
+                # mimic `vgrid.inv_mu0_factor = 1/3` correction for ivr==0
+                if i==0:
+                    tmp = self.den * tmp_exp / (self.temp_ev)**1.5 * self.vgrid.dvperp/3. * np.sqrt(self.fg_temp_ev)
+
                 # remove maxwellian with botzmann factor and add maxwellian without boltzmann factor.
                 self.f[:,i,j] = self.f[:,i,j] + tmp* (1-bltz_factor)
 
