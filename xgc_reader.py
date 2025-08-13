@@ -587,8 +587,14 @@ class xgc1(object):
         wedge_n=self.unit_dic['sml_wedge_n']
         for i in [0,1]:
             dpsin=self.hl[i].psin[1]-self.hl[i].psin[0]  #equal dist
+
+            self.rs=np.interp([1],self.bfm.psino,self.bfm.rmido)
             #ds = dR* 2 * pi * R / wedge_n
-            ds=dpsin/self.bfm.dpndrs* 2 * 3.141592 * self.bfm.r0 /wedge_n  #R0 at axis is used. should I use Rs?
+            ds=dpsin/self.bfm.dpndrs* 2 * 3.141592 * self.bfm.r0 / wedge_n  # R0 at axis is used. should I use Rs?
+            # ds=dpsin/self.bfm.dpndrs* 2 * 3.141592 * self.rs / wedge_n  # Rs version
+
+            print(f"r0 / rs {self.bfm.r0 / self.rs}")
+
             self.hl[i].rmid=np.interp(self.hl[i].psin,self.bfm.psino,self.bfm.rmido)
             self.hl[i].post_heatdiag(ds)
             self.hl[i].total_heat(wedge_n)
@@ -1457,9 +1463,9 @@ class xgc1(object):
     ''' 
     functions for k-w power spectrum
     '''
-    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False):
+    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, isurf_sep=-1, old_vexb=False):
         #find line segment
-        ms, psi0, length = self.find_line_segment(ns_half, psi_target)
+        ms, psi0, length = self.find_line_segment(ns_half, psi_target, isurf_sep)
 
         print('psi0=',psi0,'length=',length) 
         print('getting ExB velocity...')
@@ -1483,8 +1489,11 @@ class xgc1(object):
     
     # Find line segment of midplane with psi=psi_target or nearest flux surface
     # Works inside separatrix, but not separatrix or SOL
-    def find_line_segment(self, n, psi_target, dir='middle'):
-        isurf=np.argmin( np.abs(self.mesh.psi_surf/self.psix-psi_target) )
+    def find_line_segment(self, n, psi_target, isurf_sep=-1, dir='middle'):
+        if isurf_sep > 0:
+            isurf=np.argmin( np.abs(self.mesh.psi_surf[:isurf_sep]/self.psix-psi_target) )
+        else:
+            isurf=np.argmin( np.abs(self.mesh.psi_surf/self.psix-psi_target) )
 
         #plt.plot(psi_surf)
         msk=self.mesh.surf_idx[isurf,0:self.mesh.surf_len[isurf]] -1 #node index of the surface, -1 for zero base
