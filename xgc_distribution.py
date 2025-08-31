@@ -564,7 +564,7 @@ def flux_surface_average(var, xr):
     # check if NaN exists
     if(np.isnan(var).any()):
         print('NaN exists in var')
-        idx=np.isnan(var)[0]
+        idx = np.where(np.isnan(var))[0]
         print('NaN at:', idx, var[idx])
         
     fsa_surf = xr.fsa_simple(var)
