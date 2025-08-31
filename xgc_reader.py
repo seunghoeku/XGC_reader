@@ -1519,9 +1519,16 @@ class xgc1(object):
         length=np.sum(ds)
 
         begin_end_ratio = ds[0]/ds[-1]
-        print('ratio=',begin_end_ratio)
         if((begin_end_ratio>1.5) or (begin_end_ratio < 0.7)):
-            ms, psi0, length = self.find_line_segment(n, psi_target, dir='up')
+            if(dir=='middle'):
+                print('ratio=',begin_end_ratio, 'trying upper side')
+                ms, psi0, length = self.find_line_segment(n, psi_target, dir='up')
+            elif(dir=='up'):
+                print('ratio=',begin_end_ratio, 'trying lower side')
+                ms, psi0, length = self.find_line_segment(n, psi_target, dir='down')
+            else:
+                print('ratio=',begin_end_ratio, 'Failed to find line segment')
+                return np.array([]), 0, 0
 
         return ms, psi0, length
 
@@ -1594,7 +1601,7 @@ class xgc1(object):
     FFT to get power spectrum.
     returns dpot in time-theta index, power spectrum in k-w, and time value
     '''
-    def reading_3d_data(self,istart, iend, skip, ms):
+    def reading_3d_data(self,istart, iend, skip, ms, no_fft=False):
         ns=np.size(ms)
         nt=int( (iend-istart)/skip ) +1
 
@@ -1625,6 +1632,11 @@ class xgc1(object):
             time[it]=time1
             #print(it)
 
+
+        if(no_fft):
+            return dpot4, time # return whole dpot4 data to process later
+        
+        
         #fft and average
         for iphi in range(0,nphi-1):
             fc=np.fft.fft2(dpot4[iphi,:,:])
