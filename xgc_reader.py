@@ -430,10 +430,16 @@ class xgc1(object):
             dsepinit=0.1 # 0.1 mm
 
             p0=np.array([q0init, sinit, lqinit, dsepinit])
-            if(pmask==None):
-                popt,pconv = curve_fit(self.eich,self.rmidsepmm,ydata,p0=p0)
-            else:
-                popt,pconv = curve_fit(self.eich,self.rmidsepmm[pmask],ydata[pmask],p0=p0)
+            if(pmask is None):
+                pmask=slice(0,ydata.shape[0])
+
+            r_data=self.rmidsepmm[pmask]
+            y_data=ydata[pmask]
+            try:
+                popt,pconv = curve_fit(self.eich,r_data,y_data,p0=p0)
+            except:
+                popt=[0, 1, 1, 0]
+                pconv=np.zeros_like(p0)
 
             return popt, pconv
 
@@ -463,10 +469,15 @@ class xgc1(object):
             dsepinit=0.01 # 0.01 mm
 
             p0=np.array([q0init, qfinit, lpinit, lninit, lfinit, dsepinit])
-            if(pmask==None):
-                popt,pconv = curve_fit(self.lambda_q3,self.rmidsepmm,ydata,p0=p0)
-            else:
-                popt,pconv = curve_fit(self.lambda_q3,self.rmidsepmm[pmask],ydata[pmask],p0=p0)
+            if(pmask is None):
+                pmask=slice(0,ydata.shape[0])
+            r_data=self.rmidsepmm[pmask]
+            y_data=ydata[pmask]
+            try:
+                popt,pconv = curve_fit(self.lambda_q3,r_data,y_data,p0=p0)
+            except:
+                popt=[0, 0, 1, 1, 0, 0]
+                pconv=np.zeros_like(p0)
 
             return popt, pconv
 
@@ -500,10 +511,8 @@ class xgc1(object):
             self.dsep_eich=np.zeros_like(self.lq_eich)
 
             for i in range(self.time.size):
-                try :
-                    popt,pconv = self.eich_fit1(self.qt[i,:],pmask)
-                except:
-                    popt=[0, 0, 0, 0]
+                popt,pconv = self.eich_fit1(self.qt[i,:],pmask)
+
                 
                 self.lq_eich[i]= popt[2]
                 self.S_eich[i] = popt[1]
@@ -695,9 +704,14 @@ class xgc1(object):
 
             p0=np.array([q0init, sinit, lqinit, dsepinit])
             if(pmask is None):
-                popt,pconv = curve_fit(self.eich,self.rmidsepmm,ydata,p0=p0)
-            else:
-                popt,pconv = curve_fit(self.eich,self.rmidsepmm[pmask],ydata[pmask],p0=p0)
+                pmask=slice(0,ydata.shape[0])
+            r_data=self.rmidsepmm[pmask]
+            y_data=ydata[pmask]
+            try:
+                popt,pconv = curve_fit(self.eich,r_data,y_data,p0=p0)
+            except:
+                popt=[0, 1, 1, 0]
+                pconv=np.zeros_like(p0)
 
             return popt, pconv
 
@@ -806,10 +820,11 @@ class xgc1(object):
         if fit_mask is None:
             fit_mask = md
         popt,pconv = self.hl2.eich_fit1(self.hl2.q_total[it,:], pmask=fit_mask)
-        eich = self.hl2.eich(self.hl2.rmidsepmm[md], popt[0], popt[1], popt[2], popt[3])
+
+        eich = self.hl2.eich(self.hl2.rmidsepmm[fit_mask], popt[0], popt[1], popt[2], popt[3])
         plt.subplots()
-        plt.plot(self.hl2.rmidsepmm[md], self.hl2.q_total[it,md],label='XGC')
-        plt.plot(self.hl2.rmidsepmm[md], eich,label='Eich Fit')
+        plt.plot(self.hl2.rmidsepmm[fit_mask], self.hl2.q_total[it,fit_mask],label='XGC')
+        plt.plot(self.hl2.rmidsepmm[fit_mask], eich,label='Eich Fit')
         plt.xlim(xlim[0], xlim[1])
         plt.title('$\\lambda_q$ = %3.3f mm, S=%3.3f mm, t=%3.3f ms'%(popt[2],popt[1],self.hl2.time[it]*1E3))
         plt.ylabel('Parallel heat flux [W/$m^2$] at the divertor')

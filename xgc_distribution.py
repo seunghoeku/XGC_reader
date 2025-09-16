@@ -134,6 +134,8 @@ class XGCDistribution:
         if(not has_electron):
             idx = idx-1
 
+        print('species index:', idx)
+
         # electron distribution has boltzmann factor - need to read dpot, too
         if(var_string=='e_f'):
             has_boltzmann = True
