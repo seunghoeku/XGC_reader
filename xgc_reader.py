@@ -646,12 +646,13 @@ class xgc1(object):
                 self.dt[0] = self.dt[1] # assume that the first time step is the same as the second one.
                 self.dt=self.dt[:,np.newaxis]
 
-        def get_midplane_conversion(self,psino,rmido, psix, wedge_n):
+        def get_midplane_conversion(self,psino,rmido):
             """
             get midplane conversion of each species
             """
-            self.rs = np.interp([1],psino,rmido)
-            self.rmidsepmm = (np.interp(self.psin,psino,rmido) - self.rs)  * 1E3
+            rs = np.interp([1],psino,rmido)
+            rmidsepmm = (np.interp(self.psin,psino,rmido) - rs)  * 1E3
+            return rs, rmidsepmm
 
         def get_parallel_flux(self):
             for isp in range(self.nsp):
@@ -766,11 +767,12 @@ class xgc1(object):
             psino=self.bfm.psino
             rmido=self.bfm.rmido
         else: #get it from xgc.mesh.bp
-            psino, rmido = self.midplane_var(self.mesh.r)
+            psino, tmp, rmido = self.midplane_var(self.mesh.r, return_rmid=True)
+            # both tmp and rmido gives midplane r, but rmido is before the mesh interpolation.
 
         # get midplane conversion
         #plt.plot(psino,rmido)
-        self.hl2.get_midplane_conversion(psino, rmido, self.psix, wedge_n)
+        self.hl2.rs , self.hl2.rmidsepmm = self.hl2.get_midplane_conversion(psino, rmido)
         self.hl2.get_parallel_flux()
         self.hl2.update_total_flux()
 
@@ -1954,6 +1956,12 @@ class xgc1(object):
 
         var_tri = LinearTriInterpolator(self.mesh.triobj,var)
         var_mid = var_tri(r_mid, z_mid)
+
+        #remove nan
+        mask = np.ma.getmaskarray(psi_mid)
+        r_mid = r_mid[~mask]
+        psi_mid = np.asarray(psi_mid.compressed())
+        var_mid = np.asarray(var_mid.compressed())
 
         if(return_rmid):
             return psi_mid, var_mid, r_mid
