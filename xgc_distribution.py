@@ -723,3 +723,38 @@ def regularize_near_x(dist, xr, radius=0.1, del_psi_n = 0.01):
     for i in range(dist.vgrid.nvperp):
         for j in range(dist.vgrid.nvpdata):
             dist.f[msk,i,j] = dist.f[msk,i,j] * factor2
+
+
+
+# Create tanh envelope to filter high energy particles
+def create_tanh_envelope(vgrid, v_cutoff=2.0, transition_width=0.5):
+    """
+    Create a tanh envelope that keeps low energy and reduces high energy
+    
+    Parameters:
+    -----------
+    vgrid : VelocityGrid
+        Velocity grid object
+    v_cutoff : float
+        Velocity cutoff in units of thermal velocity (default: 2.0)
+    transition_width : float
+        Width of the tanh transition (default: 0.5)
+    
+    Returns:
+    --------
+    envelope : ndarray
+        2D envelope array with shape (nvperp, nvpdata)
+    """
+    # Create velocity meshgrids
+    VPARA, VPERP = np.meshgrid(vgrid.vpara, vgrid.vperp)
+    
+    # Calculate total velocity squared (normalized)
+    v_total_sq = VPARA**2 + VPERP**2
+    v_total = np.sqrt(v_total_sq)
+    
+    # Create tanh envelope: 1 for low energy, 0 for high energy
+    # tanh((v_cutoff - v_total) / transition_width)
+    # This gives +1 for v_total << v_cutoff and -1 for v_total >> v_cutoff
+    envelope = 0.5 * (1 + np.tanh((v_cutoff - v_total) / transition_width))
+    
+    return envelope
