@@ -41,8 +41,8 @@ rleft   R at left (inner) boundary, float [meter]
 zmid    Z at middle of domain, float [meter]
 rmagx   R at magnetic axis (0-point), float [meter]
 zmagx   Z at magnetic axis (0-point), float [meter]
-simagx  Poloidal flux :math:`\psi` at magnetic axis, float [weber / radian]
-sibdry  Poloidal flux :math:`\psi` at plasma boundary, float [weber / radian]
+simagx  Poloidal flux :math:`\\psi` at magnetic axis, float [weber / radian]
+sibdry  Poloidal flux :math:`\\psi` at plasma boundary, float [weber / radian]
 bcentr  Vacuum toroidal magnetic field at rcentr, float [tesla]
 cpasma  Plasma current, float [ampere]
 ======= ========================================================================
@@ -50,16 +50,16 @@ cpasma  Plasma current, float [ampere]
 This is then followed by a series of grids:
 
 ======= ========================================================================
-fpol    Poloidal current function :math:`F(\psi)=RB_t`, 1D array [meter * tesla]
-pres    Plasma pressure :math:`p(\psi)`, 1D array [pascal]
-ffprime :math:`FF'(\psi)`, 1D array [meter**2 * tesla**2 * radian / weber]
-pprime  :math:`p'(\psi)`, 1D array [pascal * radian / weber]
-psi     Poloidal flux :math:`\psi`, 2D array [weber / radian]
-qpsi    Safety factor :math:`q(\psi)`, 1D array [dimensionless]
+fpol    Poloidal current function :math:`F(\\psi)=RB_t`, 1D array [meter * tesla]
+pres    Plasma pressure :math:`p(\\psi)`, 1D array [pascal]
+ffprime :math:`FF'(\\psi)`, 1D array [meter**2 * tesla**2 * radian / weber]
+pprime  :math:`p'(\\psi)`, 1D array [pascal * radian / weber]
+psi     Poloidal flux :math:`\\psi`, 2D array [weber / radian]
+qpsi    Safety factor :math:`q(\\psi)`, 1D array [dimensionless]
 ======= ========================================================================
 
-The 1D arrays are expressed on a linearly spaced :math:`\psi` grid which may be
-generated using ``numpy.linspace(simagx, sibdry, nx)``. The 2D :math:`\psi` grid is
+The 1D arrays are expressed on a linearly spaced :math:`\\psi` grid which may be
+generated using ``numpy.linspace(simagx, sibdry, nx)``. The 2D :math:`\\psi` grid is
 instead expressed on a linearly spaced  grid extending the range
 ``[rleft, rleft + rdim]`` in the R direction and ``[zmid - zdim/2, zmid + zdim/2]``
 in the Z direction. Each grid is printed over multiple lines using the Fortran
@@ -90,9 +90,10 @@ zlim    Z of limiter points, 1D array [meter]
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from freeqdsk import geqdsk
 
+# read geqdsk file using freeqdsk module
 def geqdsk_reader(filename, overide_wall=None):
-    from freeqdsk import geqdsk
     
     with open(filename, "r") as f:
         g = geqdsk.read(f)
@@ -113,21 +114,38 @@ def geqdsk_reader(filename, overide_wall=None):
     add_values(g)
     return g
 
+# read wall data - wrapper
 def read_wall(g, filename):
+    try:
+        r, z, n = read_wall_with_header(g, filename)
+    except:
+        print('Warning: No header in wall file. Reading wall data without header.')
+        r, z, n = read_wall_without_header(g, filename)
+
+    g['rlim'] = r
+    g['zlim'] = z
+    g['nlim'] = n
+
+def read_wall_without_header(g, filename):
+    with open(filename, "r") as f:
+        data = np.loadtxt(f)
+        n = data.shape[0]
+        r = data[:, 0]
+        z = data[:, 1]
+        return r, z, n
+
+def read_wall_with_header(g, filename):
     #read wall data
     with open(filename, "r") as f:
         [n] = map(int, f.readline().strip().split())
         #allocate array
         r=np.zeros(n)
         z=np.zeros(n)
-
         for l in range(n):
             [r[l], z[l]]=map(float, f.readline().strip().split() )
+        return r, z, n
 
-        g['rlim']=r
-        g['zlim']=z
-
-
+# add additional values to the geqdsk data
 def add_values(g):
     #define spline function
     from scipy.interpolate import interp1d, RectBivariateSpline
@@ -175,6 +193,7 @@ def add_values(g):
     g['n_gb'] = g['cpasma'] / 1E6 / (np.pi * g['a_all']**2) #g['cpasma'] is current
     return 
 
+# show geqdsk geometry
 def show_geqdsk(g):
     plt.contour(g['rgrid'], g['zgrid'], g['psi'].transpose(), 100,cmap='jet')
     plt.axis('equal')
@@ -234,4 +253,18 @@ def find_x_point(rgrid, zgrid, psi, initial_guess, bd_dim):
     else:
         return {'success': False, 'message': 'Optimization failed to converge.'}
 
+# flip the geometry upside down
+def updown_flip(g):
+    g['zlim'] = -g['zlim']
+    g['zbdry'] = -g['zbdry']
+    g['zgrid'] = -g['zgrid']
+    g['zmid'] = -g['zmid']
+    g['zmin'] = -np.max(g['zgrid'])
+    g['zmagx'] = -g['zmagx']
+    g['zgrid'] = g['zgrid'][::-1]
+    g['psi'] = g['psi'][:, ::-1]
 
+# save geqdsk file
+def save_geqdsk(g, filename):
+    with open(filename, "w") as f:
+        geqdsk.write(g, f)
