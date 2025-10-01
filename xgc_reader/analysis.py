@@ -253,61 +253,62 @@ def find_exb_velocity(xgc_instance, istart, iend, skip, ms):
     pbar = tqdm(range(istart, iend, skip))
     
     for i in pbar:
-        try:
-            with adios2.FileReader('xgc.f3d.%5.5d.bp' % i) as f:
-                vi_pol = f.read('i_pol_velocity')
-                ve_pol = f.read('e_pol_velocity')
-                
-            pol_vi += np.mean(vi_pol[:, ms], axis=(0, 1))
-            pol_ve += np.mean(ve_pol[:, ms], axis=(0, 1))
-            ct += 1
-        except:
-            print(f"Warning: Could not read f3d file for step {i}")
-            continue
-    
-    if ct > 0:
-        pol_vi /= ct
-        pol_ve /= ct
-        v_exb = (pol_vi + pol_ve) / 2  # Simple average
-    else:
-        v_exb = 0
-        
+        f=adios2.FileReader('xgc.f3d.%5.5d.bp' % (i))
+
+        i_pol_n0_f0=f.read('i_poloidal_flow_n0_f0')
+        e_pol_n0_f0=f.read('e_poloidal_flow_n0_f0')
+        f.close()
+
+        pol_vi = pol_vi + np.mean(i_pol_n0_f0[ms])
+        pol_ve = pol_ve + np.mean(e_pol_n0_f0[ms])
+
+        ct = ct + 1
+        #print(i)
+    pol_vi = pol_vi/ct
+    pol_ve = pol_ve/ct
+    v_exb = (pol_vi + pol_ve)/2
+    print('pol_vi=', pol_vi, 'pol_ve=', pol_ve)
     return v_exb
+
+'''
+find avearage ExB velocity of line segment defined with node index ms
+It reads epsi of xgc.3d.*.bp from index (istart, iend, skip)
+and calculate ExB velocity in time.
+'''
+def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
+
+    bt = xgc_instance.bfield[2,ms]
+    b2 = np.sqrt(xgc_instance.bfield[0,ms]**2 + xgc_instance.bfield[1,ms]**2 + xgc_instance.bfield[2,ms]**2)
+
+    pbar = tqdm(range(istart,iend,skip))
+    for count, istep in enumerate(pbar):
+        with adios2.FileReader('xgc.3d.%5.5d.bp' % (istep)) as f:
+            epsi=f.read('epsi') # E_r
+            try:
+                time1=f.read('time')
+            except:
+                time1=istep*xgc_instance.sml_dt
+            v_exb1=epsi[:,ms]*bt/b2 # ExB velocity
+            v_exb1=v_exb1[np.newaxis,:,:]
+
+        if(count==0):
+            v_exb = v_exb1
+            time = time1
+        else:
+            v_exb = np.concatenate((v_exb,v_exb1),axis=0)
+            time = np.vstack((time,time1))
+    if(only_average):
+        v_exb = np.mean(v_exb,axis=(0,1,2))
+        return v_exb # only return averaged ExB velocity
+    else:
+        return v_exb, time # return all ExB velocity in (time, toroidal angle, poloidal index) and time array
+
+
 
 
 def power_spectrum_w_k_with_exb(xgc_instance, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False):
     """
-    Calculate power spectrum w-k with ExB velocity (simplified implementation).
-    
-    Parameters
-    ----------
-    xgc_instance : xgc1
-        XGC instance
-    istart : int
-        Starting step
-    iend : int
-        Ending step
-    skip : int
-        Skip interval
-    skip_exb : int
-        ExB skip interval
-    psi_target : float
-        Target psi value
-    ns_half : int
-        Half segment size
-    old_vexb : bool, optional
-        Use old ExB velocity calculation
-        
-    Returns
-    -------
-    ms : array_like
-        Line segment indices
-    psi0 : float
-        Actual psi value
-    length : float
-        Segment length
-    v_exb : float
-        ExB velocity
+    Calculate power spectrum w-k with ExB velocity.
     """
     # Find line segment
     from .geometry import find_line_segment
@@ -316,14 +317,22 @@ def power_spectrum_w_k_with_exb(xgc_instance, istart, iend, skip, skip_exb, psi_
     print('psi0=', psi0, 'length=', length) 
     print('getting ExB velocity...')
     
-    # Get ExB velocity
-    v_exb = find_exb_velocity(xgc_instance, istart, iend, skip_exb, ms)
-    
-    # This is a simplified implementation - full power spectrum calculation
-    # would require more complex FFT analysis
-    print(f'Average ExB velocity: {v_exb}')
-    
-    return ms, psi0, length, v_exb
+    #get exb
+    if(old_vexb):
+        v_exb = find_exb_velocity(xgc_instance, istart, iend, skip_exb, ms)
+    else:
+        v_exb = find_exb_velocity2(xgc_instance, istart, iend, skip_exb, ms)
+
+    print('v_exb=',v_exb,' m/s')
+    #reading data
+    print('reading 3d data...')
+    dpot4,po,time = reading_3d_data(xgc_instance, istart, iend, skip, ms)
+
+    #prepare parameters for plot
+    k, omega = prepare_plots(xgc_instance, length,ms,time)
+    print('done.')
+        
+    return ms, psi0, v_exb, dpot4, po, k, omega, time, length
 
 
 def gam_freq_analytic(xgc_instance):
@@ -447,74 +456,53 @@ def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
 def reading_3d_data(xgc_instance, istart, iend, skip, ms, no_fft=False):
     """
     Read 3D dpot data and perform FFT analysis.
-    
-    Parameters
-    ----------
-    xgc_instance : xgc1
-        XGC instance
-    istart : int
-        Starting step
-    iend : int
-        Ending step
-    skip : int
-        Skip interval
-    ms : array_like
-        Node indices
-    no_fft : bool, optional
-        Skip FFT processing
-        
-    Returns
-    -------
-    dpot4 : array_like
-        Processed dpot data
-    time : array_like
-        Time array
     """
-    ns = np.size(ms)
-    nt = int((iend - istart) / skip) + 1
     
-    # Get nphi
-    i = istart
-    with adios2.FileReader('xgc.3d.%5.5d.bp' % i) as f:
-        dpot = f.read('dpot')
-    nphi = np.shape(dpot)[0]
-    
-    dpot4 = np.zeros((nphi, nt, ns))
-    time = np.zeros(nt)
-    
-    pbar = tqdm(range(istart, iend + skip, skip))
-    for i in pbar:
-        try:
-            with adios2.FileReader('xgc.3d.%5.5d.bp' % i) as f:
-                it = int((i - istart) / skip)
-                dpot = f.read('dpot')
-                try:
-                    time1 = f.read('time')
-                except:
-                    time1 = i * xgc_instance.sml_dt
-                    
-                dpot2 = dpot - np.mean(dpot, axis=0)
-                dpot3 = dpot2[:, ms]
-                dpot4[:, it, :] = dpot3
-                time[it] = time1
-        except:
-            print(f"Warning: Could not read 3d file for step {i}")
-            continue
-    
-    if no_fft:
-        return dpot4, time
-    
-    # FFT processing
-    for iphi in range(0, nphi - 1):
-        fc = np.fft.fft2(dpot4[iphi, :, :])
-        fc = np.fft.fftshift(fc)
-        if iphi == 0:
-            fc_all = fc[np.newaxis, :, :]
-        else:
-            fc_all = np.concatenate((fc_all, fc[np.newaxis, :, :]), axis=0)
-    
-    return fc_all, time
+    ns=np.size(ms)
+    nt=int( (iend-istart)/skip ) +1
 
+    #get nphi
+    i=istart
+    f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
+
+    dpot=f.read('dpot')
+    f.close()
+    nphi=np.shape(dpot)[0]
+
+    dpot4=np.zeros((nphi,nt,ns))
+    time=np.zeros(nt)
+    pbar = tqdm(range(istart,iend+skip,skip))
+    for i in pbar:
+        f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
+        it=int( (i-istart)/skip )
+        dpot=f.read('dpot')
+        try:
+            time1=f.read('time')
+        except:
+            time1=i*self.sml_dt
+        f.close()
+        dpot2=dpot-np.mean(dpot,axis=0)
+        dpot3=dpot2[:,ms]
+        #print(nt,it)
+        dpot4[:,it,:] = dpot3
+        time[it]=time1
+        #print(it)
+
+
+    if(no_fft):
+        return dpot4, time # return whole dpot4 data to process later
+    
+    
+    #fft and average
+    for iphi in range(0,nphi-1):
+        fc=np.fft.fft2(dpot4[iphi,:,:])
+        fc=np.fft.fftshift(fc)
+        if(iphi==0):
+            po=np.abs(fc)
+        else:
+            po=po+np.abs(fc)
+
+    return dpot4[0,:,:], po, time
 
 def prepare_plots(xgc_instance, dist, ms, time):
     """

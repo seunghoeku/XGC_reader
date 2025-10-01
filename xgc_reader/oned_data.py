@@ -66,15 +66,15 @@ class data1(object):
 
 
 def radial_flux_all(xgc_instance):
-    """Get radial flux of energy and particle from 1D data."""
-    # Load volume data if not loaded
-    if not hasattr(xgc_instance, "vol"):
+    
+    #load volume data
+    if(not hasattr(xgc_instance,"vol")):
+        #self.vol=self.voldata(self.path)
         xgc_instance.load_volumes()
     
-    if not hasattr(xgc_instance, "od"):
-        raise ValueError("1D data not loaded. Call load_oned() first.")
-
-    # Get dpsi
+    #check reading oneddiag?
+    
+    #get dpsi
     pmks = xgc_instance.od.psi_mks[0, :]
     dpsi = np.zeros_like(pmks)
     dpsi[1:-1] = 0.5 * (pmks[2:] - pmks[0:-2])
@@ -82,56 +82,51 @@ def radial_flux_all(xgc_instance):
     dpsi[-1] = dpsi[-2]
     xgc_instance.od.dvdp = xgc_instance.vol.od / dpsi
     xgc_instance.od.dpsi = dpsi
-    
+
+    nt = xgc_instance.od.time.size
+    ec = 1.6E-19  # electron charge
     dvdpall = xgc_instance.od.dvdp * xgc_instance.sml_wedge_n
-    
-    # Ion flux
-    xgc_instance.od.efluxi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_en_flux_df_1d * dvdpall
+
+    # ion flux
+    xgc_instance.od.efluxi    = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_en_flux_df_1d * dvdpall
     xgc_instance.od.efluxexbi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_en_flux_ExB_df_1d * dvdpall
-    
-    # Check for additional flux components
     if hasattr(xgc_instance.od, 'i_radial_en_flux_3db_df_1d'):
         xgc_instance.od.eflux3dbi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_en_flux_3db_df_1d * dvdpall
 
-    # Electron flux (if available)
-    if hasattr(xgc_instance, 'electron_on') and xgc_instance.electron_on:
-        xgc_instance.od.efluxe = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_en_flux_df_1d * dvdpall
+    xgc_instance.od.cfluxi    = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.Ti * ec * xgc_instance.od.i_radial_flux_df_1d * dvdpall
+    xgc_instance.od.cfluxexbi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.Ti * ec * xgc_instance.od.i_radial_flux_ExB_df_1d * dvdpall
+    xgc_instance.od.pfluxi    = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_flux_df_1d * dvdpall
+    xgc_instance.od.pfluxexbi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_flux_ExB_df_1d * dvdpall
+
+    xgc_instance.od.mfluxi    = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_mom_flux_df_1d * dvdpall # toroidal momentum flux
+    xgc_instance.od.mfluxexbi = xgc_instance.od.i_gc_density_df_1d * xgc_instance.od.i_radial_mom_flux_ExB_df_1d * dvdpall
+
+    if xgc_instance.electron_on:
+        xgc_instance.od.efluxe    = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_en_flux_df_1d * dvdpall
         xgc_instance.od.efluxexbe = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_en_flux_ExB_df_1d * dvdpall
+        if hasattr(xgc_instance.od, 'e_radial_en_flux_3db_df_1d'):
+            xgc_instance.od.eflux3dbe = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_en_flux_3db_df_1d * dvdpall
+
+        xgc_instance.od.cfluxe    = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.Te * ec * xgc_instance.od.e_radial_flux_df_1d * dvdpall
+        xgc_instance.od.cfluxexbe = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.Te * ec * xgc_instance.od.e_radial_flux_ExB_df_1d * dvdpall
+        xgc_instance.od.pfluxe    = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_flux_df_1d * dvdpall
+        xgc_instance.od.pfluxexbe = xgc_instance.od.e_gc_density_df_1d * xgc_instance.od.e_radial_flux_ExB_df_1d * dvdpall
+
+    if xgc_instance.ion2_on:
+        xgc_instance.od.efluxi2    = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_en_flux_df_1d * dvdpall
+        xgc_instance.od.efluxexbi2 = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_en_flux_ExB_df_1d * dvdpall
+        if hasattr(xgc_instance.od, 'i_radial_en_flux_3db_df_1d'):
+            xgc_instance.od.eflux3dbi2 = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_en_flux_3db_df_1d * dvdpall
+
+        xgc_instance.od.cfluxi2    = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.Ti2 * ec * xgc_instance.od.i2radial_flux_df_1d * dvdpall
+        xgc_instance.od.cfluxexbi2 = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.Ti2 * ec * xgc_instance.od.i2radial_flux_ExB_df_1d * dvdpall
+        xgc_instance.od.pfluxi2    = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_flux_df_1d * dvdpall
+        xgc_instance.od.pfluxexbi2 = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_flux_ExB_df_1d * dvdpall
+        xgc_instance.od.mfluxi2    = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_mom_flux_df_1d * dvdpall
+        xgc_instance.od.mfluxexbi2 = xgc_instance.od.i2gc_density_df_1d * xgc_instance.od.i2radial_mom_flux_ExB_df_1d * dvdpall    
+
 
 
 def heat_flux_all(xgc_instance):
     """Calculate all heat flux components."""
     radial_flux_all(xgc_instance)
-    
-    def load_data_slow(self, f, vars, prefix_len):
-        """Load data slowly using standard ADIOS2 reads."""
-        for v in vars:
-            stc = vars[v].get("AvailableStepsCount")
-            ct = vars[v].get("Shape")  
-            sgl = vars[v].get("SingleValue")
-            stc = int(stc)
-            
-            if sgl == "true":
-                setattr(self, v[prefix_len:], f.read(v))
-            else:
-                setattr(self, v[prefix_len:], f.read(v, start=[], count=[], step_selection=[0, stc]))
-
-    def load_data(self, f, vars, prefix_len):
-        """Load data using optimized ADIOS2 bindings."""
-        try:
-            bIO = f.io.impl  # adios2.bindings.adios2_bindings.IO object
-            bEngine = f.engine.impl
-            for v in vars:
-                bVar = bIO.InquireVariable(v)
-                countList = bVar.Count()
-                if len(countList) == 0:  # scalar
-                    setattr(self, v[prefix_len:], f.read(v))
-                else:
-                    setattr(self, v[prefix_len:], f.read(v, start=[], count=countList, step_selection=[0, -1]))
-        except:
-            # Fallback to slow method
-            self.load_data_slow(f, vars, prefix_len)
-    
-    # Add these methods to data1 class
-    data1.load_data_slow = load_data_slow
-    data1.load_data = load_data
