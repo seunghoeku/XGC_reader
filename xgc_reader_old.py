@@ -457,7 +457,15 @@ class xgc1(object):
             rtn[ms] = (q0-qf) * np.exp(-(x[ms]-dsepl)/ln) + qf * np.exp(-(x[ms]-dsepl)/lf)
             return rtn
 
-        """
+        # parameter space is q0, qf, lp, ln, delta_l (= lf - ln) 
+        def lambda_q3_bound(self,x,q0,qf,lp,ln,delta_l,dsep):
+            dsepl =0 # not using dsep --> dsepl=dsep to use
+            rtn = q0  * np.exp( (x-dsepl)/lp) # only x<dsep will be used.
+            ms=np.nonzero(x>=dsepl)
+            rtn[ms] = (q0-qf) * np.exp(-(x[ms]-dsepl)/ln) + qf * np.exp(-(x[ms]-dsepl)/(ln+delta_l))
+            return rtn
+
+        """        
             3 lambda_q fitting of one profile data
         """
         def lambda_q3_fit1(self,ydata,pmask):
@@ -474,9 +482,10 @@ class xgc1(object):
             r_data=self.rmidsepmm[pmask]
             y_data=ydata[pmask]
             try:
-                popt,pconv = curve_fit(self.lambda_q3,r_data,y_data,p0=p0)
+                bounds=([0, 0, 0, 0, 0, 0], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf])
+                popt,pconv = curve_fit(self.lambda_q3_bound,r_data,y_data,p0=p0, bounds=bounds)
             except:
-                popt=[0, 0, 1, 1, 0, 0]
+                popt=[0, 0, 1, 1, 1, 0]
                 pconv=np.zeros_like(p0)
 
             return popt, pconv
@@ -735,6 +744,56 @@ class xgc1(object):
                 self.S_eich[i] = popt[1]
                 self.dsep_eich[i]= popt[3]
 
+
+        """
+            Functions for 3 lambda fit: lp (lambda_q of private flux region), ln (lambda_q of near SOL), lf (lambda_q of far SOL)
+            q(x) =     q0 * exp( (x-dsep)/lp)   when x<dsep
+                 =(q0-qf) * exp(-(x-dsep)/ln) + qf * exp(-(x-dsep)/lf) when x>dsep
+        """
+        def lambda_q3(self,x,q0,qf,lp,ln,lf,dsep):
+            
+            dsepl =0 # not using dsep --> dsepl=dsep to use
+            rtn = q0  * np.exp( (x-dsepl)/lp) # only x<dsep will be used.
+            ms=np.nonzero(x>=dsepl)
+            rtn[ms] = (q0-qf) * np.exp(-(x[ms]-dsepl)/ln) + qf * np.exp(-(x[ms]-dsepl)/lf)
+            return rtn
+
+        # parameter space is q0, qf, lp, ln, delta_l (= lf - ln) 
+        def lambda_q3_bound(self,x,q0,qf,lp,ln,delta_l,dsep):
+            #dsepl =0 # not using dsep --> dsepl=dsep to use
+            dsepl =dsep
+            rtn = q0  * np.exp( (x-dsepl)/lp) # only x<dsep will be used.
+            ms=np.nonzero(x>=dsepl)
+            rtn[ms] = (q0-qf) * np.exp(-(x[ms]-dsepl)/ln) + qf * np.exp(-(x[ms]-dsepl)/(ln+delta_l))
+            return rtn
+
+        """
+            3 lambda_q fitting of one profile data
+        """
+        def lambda_q3_fit1(self,ydata,pmask):
+            q0init=np.max(ydata)
+            qfinit=0.01*q0init # 1 percent
+            lpinit=1 # 1mm
+            lninit=1 # 2mm
+            lfinit=3 # 4mm
+            dsepinit=0.01 # 0.01 mm
+
+            p0=np.array([q0init, qfinit, lpinit, lninit, lfinit-lninit, dsepinit])
+            if(pmask is None):
+                pmask=slice(0,ydata.shape[0])
+            r_data=self.rmidsepmm[pmask]
+            y_data=ydata[pmask]
+            try:
+                bounds=([0, 0, 0, 0, 0.1, 0], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf])
+                popt,pconv = curve_fit(self.lambda_q3_bound,r_data,y_data,p0=p0, bounds=bounds)
+            except:
+                popt=[0, 0, 1, 1, 1, 0]
+                pconv=np.zeros_like(p0)
+
+            return popt, pconv
+
+        
+
         """
         getting total heat (radially integrated) to inner/outer divertor.
         """
@@ -843,6 +902,30 @@ class xgc1(object):
         plt.legend()
 
         return md
+
+
+    """
+        get midplane Bp and Eich scale #14
+        lambda_q = C * Bp^s
+        C = 0.63
+        s = -1.19
+    """
+    def get_midplane_bp_sep_and_eich_scale(self):
+        # set constants
+        C = 0.63
+        s = -1.19
+
+        if not hasattr(self, 'bfield'):
+            self.load_bfield()
+        bp_mesh = np.sqrt(self.bfield[0,:]**2 + self.bfield[1,:]**2)
+        psi_mid, bp_mid = self.midplane_var(bp_mesh)
+        # Interpolate bp_mid at psi_mid using 1d interpolation
+        psi_sep = [1]
+        bp_mid_sep = np.interp(psi_sep, psi_mid, bp_mid)
+        lq_eich_scale = C * bp_mid_sep**s
+        return bp_mid_sep, lq_eich_scale
+        
+    
     """
         Load xgc.bfieldm.bp -- midplane bfield info
     """
