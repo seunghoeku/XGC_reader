@@ -1586,7 +1586,7 @@ class xgc1(object):
     def find_exb_velocity2(self, istart, iend, skip, ms, only_average=True):
 
         bt = self.bfield[2,ms]
-        b2 = np.sqrt(self.bfield[0,ms]**2 + self.bfield[1,ms]**2 + self.bfield[2,ms]**2)
+        b2 = (self.bfield[0,ms]**2 + self.bfield[1,ms]**2 + self.bfield[2,ms]**2)
 
         pbar = tqdm(range(istart,iend,skip))
         for count, istep in enumerate(pbar):

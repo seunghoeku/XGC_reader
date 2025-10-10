@@ -275,12 +275,19 @@ class xgc1(object):
         with adios2.FileReader(self.path + "xgc.bfield.bp") as f:
             try:
                 self.bfield = f.read('bfield')
+            except: # try older version of bfield
+                self.bfield = f.read('/node_data[0]/values')
+
+            if(self.bfield.shape[0]!=3): # not 3xN
+                self.bfield = np.transpose(self.bfield)
+                print('bfield shape is :', self.bfield.shape)            
+    
+            try:
+                self.jpar_bg = f.read('jpar_bg') # background current
             except:
-                try:
-                    self.bfield = f.read('/bfield')
-                except:
-                    print("Could not read bfield data")
-                    self.bfield = None
+                print('No jpar_bg in xgc.bfield.bp')
+
+
 
     def load_heatdiag(self, **kwargs):
         """Load heat diagnostic data."""

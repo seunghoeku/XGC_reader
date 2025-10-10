@@ -91,7 +91,8 @@ class XGCDistribution:
     PROTON_MASS: ClassVar[float] = 1.6726219e-27
     E_CHARGE: ClassVar[float] = 1.602176634e-19
     EV_TO_JOULE: ClassVar[float] = 1.602176634e-19
-    MU0_FACTOR: ClassVar[float] = 1/3
+    MU_VOL_FAC: ClassVar[float] = 1/2
+    VP_VOL_FAC: ClassVar[float] = 1/2
     
     #initialize from data passing
     def __init__(self, vgrid: 'VelocityGrid', nnodes: int, f: np.ndarray, den: np.ndarray, temp_ev: np.ndarray, flow: np.ndarray, fg_temp_ev: np.ndarray, mass: float, charge: float, has_maxwellian=True, has_boltzmann=False, dpot=None) -> None:
@@ -238,8 +239,13 @@ class XGCDistribution:
         if(not self.has_maxwellian):
             self.add_maxwellian()
 
-        # apply mu0_factor at zero vperp
-        self.f[:,0,:] = self.f[:,0,:] * self.MU0_FACTOR
+        # apply mu0_factor at boundary of vperp
+        self.f[:,0,:] = self.f[:,0,:] * self.MU_VOL_FAC
+        self.f[:,-1,:] = self.f[:,-1,:] * self.MU_VOL_FAC
+        
+        #apply vp_vol_fac at boundary of vpara
+        self.f[:,:,0] = self.f[:,:,0] * self.VP_VOL_FAC
+        self.f[:,:,1] = self.f[:,:,1] * self.VP_VOL_FAC
 
         #get vspace volume
         vspace_vol = self.fg_temp_ev * np.sqrt(1/(np.pi*2)) * self.vgrid.dvperp * self.vgrid.dvpara
@@ -278,8 +284,11 @@ class XGCDistribution:
                 print('flow has nan after flux average')
 
 
-        # undo multiplication by MU0_FACTOR
-        self.f[:,0,:] = self.f[:,0,:] / self.MU0_FACTOR
+        # undo multiplication by MU_VOL_FAC
+        self.f[:,0,:] = self.f[:,0,:] / self.MU_VOL_FAC
+        self.f[:,-1,:] = self.f[:,-1,:] / self.MU_VOL_FAC
+        self.f[:,:,0] = self.f[:,:,0] / self.VP_VOL_FAC
+        self.f[:,:,1] = self.f[:,:,1] / self.VP_VOL_FAC
 
         # update maxwellian moments
         if(no_update):

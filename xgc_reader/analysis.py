@@ -278,7 +278,7 @@ and calculate ExB velocity in time.
 def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
 
     bt = xgc_instance.bfield[2,ms]
-    b2 = np.sqrt(xgc_instance.bfield[0,ms]**2 + xgc_instance.bfield[1,ms]**2 + xgc_instance.bfield[2,ms]**2)
+    b2 = xgc_instance.bfield[0,ms]**2 + xgc_instance.bfield[1,ms]**2 + xgc_instance.bfield[2,ms]**2
 
     pbar = tqdm(range(istart,iend,skip))
     for count, istep in enumerate(pbar):
