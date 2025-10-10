@@ -275,7 +275,7 @@ find avearage ExB velocity of line segment defined with node index ms
 It reads epsi of xgc.3d.*.bp from index (istart, iend, skip)
 and calculate ExB velocity in time.
 '''
-def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
+def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True, return_Er=False):
 
     bt = xgc_instance.bfield[2,ms]
     b2 = xgc_instance.bfield[0,ms]**2 + xgc_instance.bfield[1,ms]**2 + xgc_instance.bfield[2,ms]**2
@@ -288,7 +288,11 @@ def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
                 time1=f.read('time')
             except:
                 time1=istep*xgc_instance.sml_dt
-            v_exb1=epsi[:,ms]*bt/b2 # ExB velocity
+            if(return_Er):
+                v_exb1=epsi[:,ms]
+            else:
+                v_exb1=epsi[:,ms]*bt/b2 # ExB velocity
+            
             v_exb1=v_exb1[np.newaxis,:,:]
 
         if(count==0):
@@ -387,70 +391,6 @@ def midplane(xgc_instance):
     from .geometry import midplane_var
     psi_mid, r_mid = midplane_var(xgc_instance, xgc_instance.mesh.psi, return_rmid=False)
     return psi_mid, r_mid
-
-
-def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True):
-    """
-    Find ExB velocity with detailed analysis (version 2).
-    
-    Parameters
-    ----------
-    xgc_instance : xgc1
-        XGC instance with magnetic field data
-    istart : int
-        Starting step
-    iend : int
-        Ending step
-    skip : int
-        Skip interval
-    ms : array_like
-        Node indices
-    only_average : bool, optional
-        Return only average velocity
-        
-    Returns
-    -------
-    v_exb : float or array_like
-        ExB velocity (averaged or full array)
-    time : array_like, optional
-        Time array (if only_average=False)
-    """
-    if not hasattr(xgc_instance, 'bfield'):
-        raise ValueError("Magnetic field data not loaded. Call load_bfield() first.")
-    
-    bt = xgc_instance.bfield[2, ms]
-    b2 = np.sqrt(xgc_instance.bfield[0, ms]**2 + 
-                 xgc_instance.bfield[1, ms]**2 + 
-                 xgc_instance.bfield[2, ms]**2)
-    
-    pbar = tqdm(range(istart, iend, skip))
-    for count, istep in enumerate(pbar):
-        try:
-            with adios2.FileReader('xgc.3d.%5.5d.bp' % istep) as f:
-                epsi = f.read('epsi')  # E_r
-                try:
-                    time1 = f.read('time')
-                except:
-                    time1 = istep * xgc_instance.sml_dt
-                    
-                v_exb1 = epsi[:, ms] * bt / b2  # ExB velocity
-                v_exb1 = v_exb1[np.newaxis, :, :]
-                
-            if count == 0:
-                v_exb = v_exb1
-                time = time1
-            else:
-                v_exb = np.concatenate((v_exb, v_exb1), axis=0)
-                time = np.vstack((time, time1))
-        except:
-            print(f"Warning: Could not read 3d file for step {istep}")
-            continue
-    
-    if only_average:
-        v_exb = np.mean(v_exb, axis=(0, 1, 2))
-        return v_exb
-    else:
-        return v_exb, time
 
 
 def reading_3d_data(xgc_instance, istart, iend, skip, ms, no_fft=False):

@@ -441,9 +441,9 @@ class xgc1(object):
         return turb_2d_report(self, **kwargs)
     
     # Additional missing methods
-    def find_exb_velocity2(self, istart, iend, skip, ms, only_average=True):
+    def find_exb_velocity2(self, istart, iend, skip, ms, only_average=True, return_Er=False):
         """Find ExB velocity with detailed analysis (version 2)."""
-        return find_exb_velocity2(self, istart, iend, skip, ms, only_average)
+        return find_exb_velocity2(self, istart, iend, skip, ms, only_average=only_average, return_Er=return_Er)
     
     def reading_3d_data(self, istart, iend, skip, ms, no_fft=False):
         """Read 3D dpot data and perform FFT analysis."""
