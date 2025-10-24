@@ -82,7 +82,7 @@ def plot1d_if(xgc_instance, obj, **kwargs):
     return fig, ax
 
 
-def contourf_one_var(xgc_instance, fig, ax, var, title='None', vm='None', cmap='jet', levels=150, cbar=True):
+def contourf_one_var(xgc_instance, var, fig=None, ax=None, title=None, vm=None, cmap='jet', levels=150, cbar=True):
     """
     Create a filled contour plot of a variable on the mesh.
     
@@ -90,12 +90,12 @@ def contourf_one_var(xgc_instance, fig, ax, var, title='None', vm='None', cmap='
     ----------
     xgc_instance : xgc1
         XGC instance with mesh data
-    fig : matplotlib.figure.Figure
-        Figure object
-    ax : matplotlib.axes.Axes
-        Axes object
     var : array_like
         Variable to plot
+    fig : matplotlib.figure.Figure, optional
+        Figure object
+    ax : matplotlib.axes.Axes, optional
+        Axes object
     title : str, optional
         Plot title
     vm : str or float, optional
@@ -110,10 +110,13 @@ def contourf_one_var(xgc_instance, fig, ax, var, title='None', vm='None', cmap='
     if plt is None:
         raise ImportError("matplotlib is required for plotting functions")
     
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+    
     if not hasattr(xgc_instance, 'mesh'):
         raise ValueError("Mesh data not loaded. Call setup_mesh() first.")
     
-    if vm == 'None':
+    if vm is None:
         cf = ax.tricontourf(xgc_instance.mesh.triobj, var, cmap=cmap, extend='both', levels=levels)
     elif vm == 'Sigma2':
         sigma = np.sqrt(np.mean(var * var) - np.mean(var)**2)
@@ -129,7 +132,7 @@ def contourf_one_var(xgc_instance, fig, ax, var, title='None', vm='None', cmap='
     if cbar:
         cbar_obj = fig.colorbar(cf, ax=ax)
     
-    if title != 'None':
+    if title is not None:
         ax.set_title(title)
     
     return cf

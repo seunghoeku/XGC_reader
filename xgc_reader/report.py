@@ -17,10 +17,15 @@ def print_plasma_info(xgc_instance):
     print("simulation delta t = %e s" % xgc_instance.sml_dt)
 
 
-def report_heatdiag2(xgc_instance, is_outer=True, is_lower=True, it=-1, xlim=[-5, 15], 
-                    lq_ylim=[0, 10], ndata=1000000, fit_mask=None, 
-                    sp_names=['e', 'i', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9']):
+def report_heatdiag2(xgc_instance, is_outer=True, is_lower=True, it=-1, xlim=[-5, 15],
+                     lq_ylim=[0, 10], ndata=1000000, fit_mask=None,
+                     sp_names=['e', 'i', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8', 'i9']):
     """
+    Report basic analysis of heatdiag2.bp
+    Need to specify the divertor region
+    ndata is maximum number of data point to be considered.
+    fit_mask is the mask for fitting. If None, all data will be used.
+
     Generate comprehensive heat diagnostic report with plots.
     
     Parameters
@@ -50,19 +55,23 @@ def report_heatdiag2(xgc_instance, is_outer=True, is_lower=True, it=-1, xlim=[-5
     if not hasattr(xgc_instance, 'hl2'):
         raise ValueError("Heat diagnostic data not loaded. Call load_heatdiag2() first.")
     
-    # Select divertor
+    if not hasattr(xgc_instance, 'unit_dic'):
+        raise ValueError("Unit dictionary not loaded. Call load_units() first.")
+    
+    # select divertor
     i0, i1 = xgc_instance.hl2.get_divertor(outer=is_outer, lower=is_lower)
-    sign = 1 if (i0 < i1) else -1 
+    print(f"Divertor region: {i0} to {i1}")
+    sign = 1 if (i0 < i1) else -1
     i1 = i0 + sign * ndata if np.abs(i1 - i0) > ndata else i1
 
     md = np.arange(i0, i1, sign)
-    
+
     # Plot divertor location
     fig, ax = plt.subplots()
-    plt.plot(xgc_instance.hl2.r[0, :], xgc_instance.hl2.z[0, :])
-    plt.plot(xgc_instance.hl2.r[0, md], xgc_instance.hl2.z[0, md], 'r-', linewidth=4, label='Divertor')
+    plt.plot(xgc_instance.hl2.r, xgc_instance.hl2.z)
+    plt.plot(xgc_instance.hl2.r[md], xgc_instance.hl2.z[md], 'r-', linewidth=4, label='Divertor')
     plt.legend()
-    
+
     # Show separatrix if available
     try:
         from .plotting import show_sep
@@ -74,17 +83,51 @@ def report_heatdiag2(xgc_instance, is_outer=True, is_lower=True, it=-1, xlim=[-5
 
     # Plot total heat flux
     xgc_instance.hl2.total_heat(xgc_instance.sml_wedge_n, pmask=md)
-    plt.figure()
+    plt.subplots()
     
     for isp in range(len(xgc_instance.hl2.sp)):
-        if isp < len(sp_names):
-            plt.plot(xgc_instance.hl2.time * 1E3, xgc_instance.hl2.sp[isp].q_sum / 1E6, 
-                    '.', label=sp_names[isp])
-    
+        plt.plot(xgc_instance.hl2.time * 1E3, xgc_instance.hl2.sp[isp].q_sum / 1E6, '.', label=sp_names[isp])
     plt.xlabel('Time (ms)')
     plt.ylabel('Total Heat Flux (MW)')
     plt.legend()
     plt.title('Total Heat Flux vs Time')
+
+    # heat flux profile
+    plt.subplots()
+    for isp in range(len(xgc_instance.hl2.sp)):
+        plt.plot(xgc_instance.hl2.rmidsepmm[md], xgc_instance.hl2.sp[isp].q[it, md] / 1E6, label=sp_names[isp])
+    plt.plot(xgc_instance.hl2.rmidsepmm[md], xgc_instance.hl2.q_total[it, md] / 1E6, label='Total')
+
+    plt.xlim(xlim[0], xlim[1])
+    plt.ylabel('Parallel heat flux [MW/$m^2$] at the divertor')
+    plt.xlabel('Midplane distance from separatrix [mm]')
+    plt.legend()
+
+    # fitting one time step
+    if fit_mask is None:
+        fit_mask = md
+    popt, pconv = xgc_instance.hl2.eich_fit1(xgc_instance.hl2.q_total[it, :], pmask=fit_mask)
+
+    eich = xgc_instance.hl2.eich(xgc_instance.hl2.rmidsepmm[fit_mask], popt[0], popt[1], popt[2], popt[3])
+    plt.subplots()
+    plt.plot(xgc_instance.hl2.rmidsepmm[fit_mask], xgc_instance.hl2.q_total[it, fit_mask], label='XGC')
+    plt.plot(xgc_instance.hl2.rmidsepmm[fit_mask], eich, label='Eich Fit')
+    plt.xlim(xlim[0], xlim[1])
+    plt.title('$\\lambda_q$ = %3.3f mm, S=%3.3f mm, t=%3.3f ms' % (popt[2], popt[1], xgc_instance.hl2.time[it] * 1E3))
+    plt.ylabel('Parallel heat flux [W/$m^2$] at the divertor')
+    plt.xlabel('Midplane distance from separatrix [mm]')
+    plt.legend()
+
+    xgc_instance.hl2.eich_fit_all(pmask=fit_mask)
+    plt.subplots()
+    plt.plot(xgc_instance.hl2.time * 1E3, xgc_instance.hl2.lq_eich, '.', label='$\\lambda_q$')
+    plt.plot(xgc_instance.hl2.time * 1E3, xgc_instance.hl2.S_eich, '.', label='S')
+    plt.ylim(lq_ylim[0], lq_ylim[1])
+    plt.xlabel('Time [ms]')
+    plt.ylabel('$\\lambda_q$, S [mm]')
+    plt.legend()
+
+    return md
 
 
 def report_profiles(xgc_instance, i_name='Main ion', i2_name='Impurity', 

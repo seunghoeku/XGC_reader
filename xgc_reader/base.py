@@ -239,9 +239,9 @@ class xgc1(object):
     def setup_f0mesh(self):
         """Set up f0 mesh data."""
         if self.campaign:
-            self.f0mesh = f0meshdata(self.campaign)
+            self.f0 = f0meshdata(self.campaign)
         else:
-            self.f0mesh = f0meshdata(self.path)
+            self.f0 = f0meshdata(self.path)
 
     def load_volumes(self):
         """Load volume data."""
@@ -333,9 +333,14 @@ class xgc1(object):
         """Plot 1D variable of initial and final time steps."""
         return plot1d_if(self, obj, **kwargs)
     
-    def contourf_one_var(self, fig, ax, var, **kwargs):
+    def contourf_one_var(self, fig, ax, var, title, **kwargs):
+        return contourf_one_var(self, var, fig=fig, ax=ax, title=title)
+
+    def contourf_one_var2(self, var, fig=None, ax=None, title=None, vm=None, cmap='jet', levels=150, cbar=True):
         """Create filled contour plot of variable on mesh."""
-        return contourf_one_var(self, fig, ax, var, **kwargs)
+        if(fig is None or ax is None):
+            fig, ax = plt.subplots()
+        return contourf_one_var(self, var, fig=fig, ax=ax, title=title, vm=vm, cmap=cmap, levels=levels, cbar=cbar)
     
     def show_sep(self, ax, style='-'):
         """Show separatrix on plot."""
@@ -476,3 +481,12 @@ class xgc1(object):
     def d_dpsi(self, field):
         """Calculate derivative with respect to psi."""
         return d_dpsi(self, field)
+    
+    def get_midplane_bp_sep_and_eich_scale(self):
+        """Get midplane Bp and Eich scale #14
+        lambda_q = C * Bp^s
+        C = 0.63
+        s = -1.19
+        """
+        from .heat_diagnostics import get_midplane_bp_sep_and_eich_scale
+        return get_midplane_bp_sep_and_eich_scale(self)

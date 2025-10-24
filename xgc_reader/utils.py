@@ -235,11 +235,11 @@ def read_one_ad2_var(filestr, varstr, with_time=False):
     with adios2.FileReader(filestr) as f:
         var = f.read(varstr)
         
-        if with_time:
-            try:
-                time = f.read('time')
-                return var, time
-            except:
-                return var, 0
-        else:
-            return var
+    if with_time:
+        try:
+            time = f.read('time')
+            return var, time
+        except:
+            return var, 0
+    else:
+        return var
