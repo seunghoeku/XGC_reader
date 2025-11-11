@@ -137,12 +137,17 @@ class XGCDistribution:
 
         print('species index:', idx)
 
+        # Ensure dir ends with '/'
+        if not dir.endswith('/'):
+            dir = dir + '/'
+            
+        # check if the file exists
         # electron distribution has boltzmann factor - need to read dpot, too
         if(var_string=='e_f'):
             has_boltzmann = True
         else:
             has_boltzmann = False
-        with adios2.FileReader(dir+'/'+filename) as file:
+        with adios2.FileReader(dir+filename) as file:
             it=time_step
             ftmp=file.read(var_string) #,start=[],count=[],step_start=it, step_count=1)
             print('Reading data with shape:',np.shape(ftmp))
@@ -202,8 +207,14 @@ class XGCDistribution:
             charge = fr.read("charge")
             vgrid = VelocityGrid(fr.read("nvperp"), fr.read("nvpara"), fr.read("vperp_max"), fr.read("vpara_max"))
             nnodes = fr.read("nnodes")
-            has_boltzmann=fr.read("has_boltzmann")
-            dpot = fr.read("dpot")
+            try:
+                has_boltzmann=fr.read("has_boltzmann")
+            except:
+                has_boltzmann=False
+            try:
+                dpot = fr.read("dpot")
+            except:
+                dpot = None
 
         return cls(vgrid, nnodes, f_g, den, temp_ev, flow, fg_temp_ev, mass, charge, has_maxwellian=False, has_boltzmann=has_boltzmann, dpot=dpot)
 
@@ -767,3 +778,67 @@ def create_tanh_envelope(vgrid, v_cutoff=2.0, transition_width=0.5):
     envelope = 0.5 * (1 + np.tanh((v_cutoff - v_total) / transition_width))
     
     return envelope
+
+def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
+    """
+    Apply poloidal smoothing to dist.f_g using a Gaussian filter along each flux surface.
+    
+    Parameters:
+    dist : XGCDistribution-like object with f_g property to be smoothed.
+    x    : geometry/mesh container with mesh.surf_len and mesh.surf_idx, and mesh.node_vol.
+    sigma_theta : float
+        Width of Gaussian filter in radians.
+    conserv_norm : bool
+        If True, the normalization is conserved.
+    Returns:
+    --------
+    dist : XGCDistribution-like object with f_g property smoothed.
+    
+    Example usage (uncomment to use):
+    poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False)
+    """
+    import scipy.ndimage
+
+    n_surf = x.mesh.surf_len.size
+    for i in range(n_surf):
+        surf_len = x.mesh.surf_len[i]
+        if surf_len == 0:
+            continue
+
+        # Calculate gaussian width in index space for the surface
+        sigma_n = surf_len * sigma_theta / (2 * np.pi)
+        n = np.arange(surf_len)
+        gauss = np.exp(-(n - surf_len / 2) ** 2 / (2 * sigma_n ** 2))
+        gauss = gauss / np.sum(gauss)
+
+        # Get poloidal surface indices; convert to 0-based index
+        indices = x.mesh.surf_idx[i, :surf_len] - 1
+
+        # Extract the slice to smooth
+        fg_slice = dist.f_g[indices, :, :]
+        fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="wrap")
+        dist.f_g[indices, :, :] = fg_smoothed
+
+        # Normalize to keep total (summed) f_g over these points unchanged
+        if(conserv_norm):
+            norm = np.sum(dist.f_g[indices, :, :])
+            if norm != 0:
+                dist.f_g[indices, :, :] = dist.f_g[indices, :, :] / norm
+
+        # Example of further vectorized access if needed:
+        var_vals = dist.f_g[indices, :, :]
+        vol_vals = x.mesh.node_vol[indices]    
+
+    
+def vspace_smooth(dist, width=1):
+    """
+    Smooth the distribution function in velocity space using 
+    """
+    import scipy
+
+    # Get current slice for the surface points
+    for nnode in range(dist.nnodes):
+        fg_slice = dist.f_g[nnode, :, :]
+        smoothed_gaussian = scipy.ndimage.gaussian_filter(fg_slice, sigma=width)
+        dist.f_g[nnode, :, :] = smoothed_gaussian
+        

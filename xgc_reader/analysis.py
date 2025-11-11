@@ -72,6 +72,7 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
         raise ValueError('Unknown mode: ' + mode)
 
     turb_intensity_list = []
+    time_list = []
     pbar = tqdm(range(istart, iend, skip))
     
     for count, i in enumerate(pbar):
@@ -80,6 +81,7 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
                 it = int((i - istart) / skip)
                 var = f.read(vname)
                 time1 = f.read('time')
+                time_list.append(time1)
                 if var.shape[0] > 200:  # 200 is maximum plane number
                     var = np.transpose(var) 
         except:
@@ -109,11 +111,10 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
         dns_surf = fsa_simple(xgc_instance, dns * msk)  # flux surface average with masking
         turb_intensity_list.append(dns_surf)
 
-    # Average over time
-    turb_int = np.mean(turb_intensity_list, axis=0)
     psi_n = xgc_instance.mesh.psi_surf / xgc_instance.psix
-    
-    return psi_n, turb_int
+    time_list = np.array(time_list)
+    turb_intensity_list = np.array(turb_intensity_list)
+    return psi_n, time_list, turb_intensity_list
 
 
 def source_simple(xgc_instance, step, period, sp='i_', moments='energy', source_type='heat_torque'):
