@@ -308,10 +308,35 @@ def find_exb_velocity2(xgc_instance, istart, iend, skip, ms, only_average=True, 
     else:
         return v_exb, time # return all ExB velocity in (time, toroidal angle, poloidal index) and time array
 
+def midplane_var_all(xgc_instance, istart, iend, skip, varname='dpot', ftype='3d', nr=300, delta_r_axis=0.):
+    """
+    Read all midplane data and return it.
+    """
 
+    nt=int( (iend-istart)/skip ) +1
+    time=np.zeros(nt)
+    pbar = tqdm(range(istart,iend+skip,skip))
+    for i in pbar:
+        f=adios2.FileReader('xgc.' + ftype + '.%5.5d.bp' % (i))
+        it=int( (i-istart)/skip )
+        var=f.read(varname)
+        try:
+            time1=f.read('time')
+        except:
+            time1=i*xgc_instance.sml_dt
+        f.close()
+        nphi = var.shape[0]
+        for iphi in range(nphi):
+            psi_mid, var_mid = xgc_instance.midplane_var(var[iphi,:], nr=nr, delta_r_axis=delta_r_axis)
+            if(it==0 and iphi==0):
+                var4=np.zeros((nphi,nt,var_mid.shape[0]))
+                
+            var4[iphi,it,:] = var_mid
+        time[it]=time1
 
+    return var4, time
 
-def power_spectrum_w_k_with_exb(xgc_instance, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False):
+def power_spectrum_w_k_with_exb(xgc_instance, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False, varname='dpot', ftype='3d', remove_n0=True):
     """
     Calculate power spectrum w-k with ExB velocity.
     """
@@ -331,13 +356,13 @@ def power_spectrum_w_k_with_exb(xgc_instance, istart, iend, skip, skip_exb, psi_
     print('v_exb=',v_exb,' m/s')
     #reading data
     print('reading 3d data...')
-    dpot4,po,time = reading_3d_data(xgc_instance, istart, iend, skip, ms)
+    var_pol,po,time = reading_3d_data(xgc_instance, istart, iend, skip, ms, varname=varname, ftype=ftype, remove_n0=remove_n0)
 
     #prepare parameters for plot
     k, omega = prepare_plots(xgc_instance, length,ms,time)
     print('done.')
         
-    return ms, psi0, v_exb, dpot4, po, k, omega, time, length
+    return ms, psi0, v_exb, var_pol, po, k, omega, time, length
 
 
 def gam_freq_analytic(xgc_instance):
@@ -394,7 +419,7 @@ def midplane(xgc_instance):
     return psi_mid, r_mid
 
 
-def reading_3d_data(xgc_instance, istart, iend, skip, ms, no_fft=False):
+def reading_3d_data(xgc_instance, istart, iend, skip, ms, varname='dpot', ftype='3d', remove_n0=True, no_fft=False):
     """
     Read 3D dpot data and perform FFT analysis.
     """
@@ -404,46 +429,43 @@ def reading_3d_data(xgc_instance, istart, iend, skip, ms, no_fft=False):
 
     #get nphi
     i=istart
-    f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
+    f=adios2.FileReader('xgc.' + ftype + '.%5.5d.bp' % (i))
 
-    dpot=f.read('dpot')
+    var=f.read(varname)
     f.close()
-    nphi=np.shape(dpot)[0]
+    nphi=np.shape(var)[0]
 
-    dpot4=np.zeros((nphi,nt,ns))
+    var4=np.zeros((nphi,nt,ns))
     time=np.zeros(nt)
     pbar = tqdm(range(istart,iend+skip,skip))
     for i in pbar:
-        f=adios2.FileReader('xgc.3d.%5.5d.bp' % (i))
+        f=adios2.FileReader('xgc.' + ftype + '.%5.5d.bp' % (i))
         it=int( (i-istart)/skip )
-        dpot=f.read('dpot')
+        var=f.read(varname)
         try:
             time1=f.read('time')
         except:
-            time1=i*self.sml_dt
+            time1=i*xgc_instance.sml_dt
         f.close()
-        dpot2=dpot-np.mean(dpot,axis=0)
-        dpot3=dpot2[:,ms]
-        #print(nt,it)
-        dpot4[:,it,:] = dpot3
+        if(remove_n0):
+            var=var-np.mean(var,axis=0)
+        var4[:,it,:] = var[:,ms]
         time[it]=time1
-        #print(it)
-
 
     if(no_fft):
-        return dpot4, time # return whole dpot4 data to process later
+        return var4, time # return whole var4 data to process later
     
     
     #fft and average
     for iphi in range(0,nphi-1):
-        fc=np.fft.fft2(dpot4[iphi,:,:])
+        fc=np.fft.fft2(var4[iphi,:,:])
         fc=np.fft.fftshift(fc)
         if(iphi==0):
             po=np.abs(fc)
         else:
             po=po+np.abs(fc)
 
-    return dpot4[0,:,:], po, time
+    return var4, po, time
 
 def prepare_plots(xgc_instance, dist, ms, time):
     """

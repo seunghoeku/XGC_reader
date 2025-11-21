@@ -23,7 +23,7 @@ from .geometry import (find_sep_idx, find_surf_idx, find_tmask, find_line_segmen
                       fsa_simple, flux_sum_simple, midplane_var, d_dpsi)
 from .analysis import (turb_intensity, source_simple, plot_source_simple, 
                       gyro_radius, find_exb_velocity, find_exb_velocity2, reading_3d_data,
-                      prepare_plots, power_spectrum_w_k_with_exb, gam_freq_analytic, midplane)
+                      prepare_plots, power_spectrum_w_k_with_exb, gam_freq_analytic, midplane, midplane_var_all)
 
 
 class xgc1(object):
@@ -309,6 +309,10 @@ class xgc1(object):
         """Extract midplane values of a variable."""
         return midplane_var(self, var, inboard, nr, delta_r_axis, delta_r_edge, return_rmid)
 
+    def midplane_var_all(self, istart, iend, skip, varname='dpot', ftype='3d', nr=300, delta_r_axis=0.):
+        """Extract all midplane values of a variable."""
+        return midplane_var_all(self, istart, iend, skip, varname=varname, ftype=ftype, nr=nr, delta_r_axis=delta_r_axis)
+
     def radial_flux_all(self):
         """Get radial flux of energy and particle from 1D data."""
         radial_flux_all(self)
@@ -386,9 +390,9 @@ class xgc1(object):
         """Find average ExB velocity of line segment."""
         return find_exb_velocity(self, istart, iend, skip, ms)
     
-    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb=False):
+    def power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, varname='dpot', ftype='3d', remove_n0=True, old_vexb=False):
         """Calculate power spectrum w-k with ExB velocity."""
-        return power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, old_vexb)
+        return power_spectrum_w_k_with_exb(self, istart, iend, skip, skip_exb, psi_target, ns_half, varname=varname, ftype=ftype, remove_n0=remove_n0, old_vexb=old_vexb)
     
     def gam_freq_analytic(self):
         """Get GAM analytic frequency."""
