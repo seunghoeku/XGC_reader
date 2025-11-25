@@ -272,4 +272,15 @@ def eich_fit1(ydata,rmidsepmm,pmask=None):
 def deg2rad(deg):
     return deg * np.pi / 180
 
-
+def get_OMP_index(xr, isurf, hfs=False):
+    inodes = xr.mesh.surf_idx[isurf, 0:xr.mesh.surf_len[isurf]]-1
+    if not hfs:
+        msk = (xr.mesh.r[inodes] > xr.eq_axis_r) # LFS
+    else:
+        msk = (xr.mesh.r[inodes] < xr.eq_axis_r) # HFS
+    
+    idx = np.argmin(abs(xr.mesh.z[inodes[msk]]-xr.eq_axis_z))
+    idx_omp = inodes[msk][idx]
+    inode_idx_omp = np.argmin(abs(inodes-idx_omp))
+    
+    return inode_idx_omp
