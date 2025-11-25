@@ -252,6 +252,9 @@ def pt_to_theta(pt1, pt2): # rad
     theta = np.atan2(dy, dx)
     return theta
 
+def get_dist(pt1,pt2):
+    return np.sqrt((pt1[0]-pt2[0])**2+(pt1[1]-pt2[1])**2)
+
 #--- Eich fit
 def eich(xdata,q0,s,lq,dsep):
   return 0.5*q0*np.exp((0.5*s/lq)**2-(xdata-dsep)/lq)*erfc(0.5*s/lq-(xdata-dsep)/s)
@@ -269,8 +272,12 @@ def eich_fit1(ydata,rmidsepmm,pmask=None):
       popt,pconv = curve_fit(eich,rmidsepmm[pmask],ydata[pmask],p0=p0)
 
   return popt, pconv
+
 def deg2rad(deg):
     return deg * np.pi / 180
+
+def rad2deg(rad):
+    return rad * 180 / np.pi
 
 def get_OMP_index(xr, isurf, hfs=False):
     inodes = xr.mesh.surf_idx[isurf, 0:xr.mesh.surf_len[isurf]]-1
