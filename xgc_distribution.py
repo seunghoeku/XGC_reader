@@ -800,13 +800,19 @@ def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
     import scipy.ndimage
 
     n_surf = x.mesh.surf_len.size
+    isep = np.argmin(abs(x.mesh.psi_surf - x.psix))
+    sigma_n_min = 10
     for i in range(n_surf):
         surf_len = x.mesh.surf_len[i]
         if surf_len == 0:
             continue
 
         # Calculate gaussian width in index space for the surface
-        sigma_n = surf_len * sigma_theta / (2 * np.pi)
+        if surf_len < sigma_n_min:
+            sigma_n = surf_len
+        else:
+            sigma_n = max(surf_len * sigma_theta / (2 * np.pi), sigma_n_min)
+
         n = np.arange(surf_len)
         gauss = np.exp(-(n - surf_len / 2) ** 2 / (2 * sigma_n ** 2))
         gauss = gauss / np.sum(gauss)
@@ -814,10 +820,30 @@ def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
         # Get poloidal surface indices; convert to 0-based index
         indices = x.mesh.surf_idx[i, :surf_len] - 1
 
-        # Extract the slice to smooth
-        fg_slice = dist.f_g[indices, :, :]
-        fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="wrap")
-        dist.f_g[indices, :, :] = fg_smoothed
+        if i == isep: # Separatrix should be separately handled due to its peculiar indexing
+            msk_above_xpt = x.mesh.z[indices] >= x.eq_x_z
+            msk_below_xpt = x.mesh.z[indices] < x.eq_x_z
+
+            # above X-pt
+            fg_slice = dist.f_g[indices[msk_above_xpt], :, :]
+            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="wrap")
+            dist.f_g[indices[msk_above_xpt], :, :] = fg_smoothed
+
+            # below X-pt
+            fg_slice = dist.f_g[indices[msk_below_xpt], :, :]
+            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="nearest")
+            dist.f_g[indices[msk_below_xpt], :, :] = fg_smoothed
+
+        else:
+            if i < isep:
+                mode_convolve = "wrap"
+            else: # for open field lines
+                mode_convolve = "nearest"
+
+            # Extract the slice to smooth
+            fg_slice = dist.f_g[indices, :, :]
+            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode=mode_convolve)
+            dist.f_g[indices, :, :] = fg_smoothed
 
         # Normalize to keep total (summed) f_g over these points unchanged
         if(conserv_norm):
