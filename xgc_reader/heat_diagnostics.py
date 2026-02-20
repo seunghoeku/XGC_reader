@@ -488,7 +488,7 @@ def load_heatdiag2(xgc_instance):
     xgc_instance.hl2.psin = xgc_instance.hl2.psi / xgc_instance.psix
     
     # Area of each segment with angle factor
-    xgc_instance.hl2.area = np.pi * xgc_instance.hl2.r * xgc_instance.hl2.ds / wedge_n * np.cos(xgc_instance.hl2.strike_angle)
+    xgc_instance.hl2.area = 2*np.pi * xgc_instance.hl2.r * xgc_instance.hl2.ds / wedge_n * np.cos(xgc_instance.hl2.strike_angle)
     xgc_instance.hl2.area = xgc_instance.hl2.area[np.newaxis, :]
 
     # Get midplane conversion
@@ -510,6 +510,16 @@ def load_heatdiag2(xgc_instance):
         xgc_instance.hl2.rs, xgc_instance.hl2.rmidsepmm = xgc_instance.hl2.get_midplane_conversion(psino, rmido)
         xgc_instance.hl2.get_parallel_flux()
         xgc_instance.hl2.update_total_flux()
+
+        # get area of midplane
+        rmid = xgc_instance.hl2.rmidsepmm*1E3 + xgc_instance.hl2.rs
+        ds_mid = np.zeros_like(rmid)
+        ds_mid[1:-1] = rmid[1:-1] - rmid[0:-2]
+        ds_mid[0] = ds_mid[1]
+        ds_mid[-1] = ds_mid[-2]
+        xgc_instance.hl2.area_midplane = 2 * np.pi * rmid * ds_mid / wedge_n
+
+
 
     except Exception as e:
         print(f"Warning: Could not process midplane conversion: {e}")
