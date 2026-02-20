@@ -512,7 +512,7 @@ def load_heatdiag2(xgc_instance):
         xgc_instance.hl2.update_total_flux()
 
         # get area of midplane
-        rmid = xgc_instance.hl2.rmidsepmm*1E3 + xgc_instance.hl2.rs
+        rmid = xgc_instance.hl2.rmidsepmm/1E3 + xgc_instance.hl2.rs
         ds_mid = np.zeros_like(rmid)
         ds_mid[1:-1] = rmid[1:-1] - rmid[0:-2]
         ds_mid[0] = ds_mid[1]
