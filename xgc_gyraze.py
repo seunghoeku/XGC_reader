@@ -221,7 +221,7 @@ def gyraze_input_single_time_step(x, step, node_list, mass_au, target_dir='./', 
         
         # get angle 
         angle, nearest_wall_node = get_graze_angle(x,node)
-        rho_e_lambda_d = get_rho_e_lambda_d(x,edist,node)
+        rho_e_lambda_d, ne, B = get_rho_e_lambda_d(x,edist,node)
         potential = get_sheath_pot(x,node,sheath_pot,nearest_wall_node) # nearest_wall_node is the index of the nearest wall node
     
         tags = {
@@ -231,7 +231,9 @@ def gyraze_input_single_time_step(x, step, node_list, mass_au, target_dir='./', 
             "step": step,
             "node": node,
             "mass_au": mass_au,
-            "source_dir": x.path
+            "source_dir": x.path,
+            "ne": ne,
+            "B": B
         }
         
         single_distribution_writer(x, idist, edist, node, step, dir=target_dir, filename=filename, use_hdf5=use_hdf5, tags=tags)
@@ -267,14 +269,16 @@ def get_rho_e_lambda_d(x,edist,node):
     Get the rho_e_lambda_d for a given node.
     """
 
-    sqrt_te_ev= 1 # 1eV for arbitrary value, because is cancled out in the ratio
+    #sqrt_te_ev= 1 # 1eV for arbitrary value, because is cancled out in the ratio
     ne = edist.den[node]
     bmag = np.sqrt(x.bfield[0,node]**2 + x.bfield[1,node]**2 + x.bfield[2,node]**2)
-    rho_e = 2.38E-2 * sqrt_te_ev/(bmag*1E4)
-    lambda_d = 7.43 * sqrt_te_ev/ np.sqrt(ne/1E6)
-    rho_e_lambda_d = rho_e/lambda_d
+    #rho_e = 2.38E-2 * sqrt_te_ev/(bmag*1E4)
+    #lambda_d = 7.43 * sqrt_te_ev/ np.sqrt(ne/1E6)
+    me=9.109E-31 # kg
+    epsilon_0=8.854E-12 # F/m
+    rho_e_lambda_d = np.sqrt(me*ne/epsilon_0) / bmag
     
-    return rho_e_lambda_d
+    return rho_e_lambda_d, ne, bmag
 
 def get_sheath_pot(x,node,sheath_pot,nearest_wall_node):
     """
