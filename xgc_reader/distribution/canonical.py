@@ -471,33 +471,57 @@ def average_analytic_maxwellian_emu_pphi(
             prev_threads = _numba.get_num_threads()
             _numba.set_num_threads(int(openmp_threads))
         try:
-            sum_weighted_flat, sum_weights_flat = _analytic_fm_accumulate_openmp(
-                triangles=triangles,
-                tri_area=tri_area,
-                bary_q=bary_q,
-                w_cfg=w_cfg,
-                den=np.asarray(dist.den, dtype=np.float64),
-                temp_ev=np.asarray(dist.temp_ev, dtype=np.float64),
-                flow=np.asarray(dist.flow, dtype=np.float64),
-                fg_temp_ev=np.asarray(dist.fg_temp_ev, dtype=np.float64),
-                potential=np.asarray(potential, dtype=np.float64),
-                psi=np.asarray(psi, dtype=np.float64),
-                r=np.asarray(r, dtype=np.float64),
-                b0=np.asarray(b0, dtype=np.float64),
-                b1=np.asarray(b1, dtype=np.float64),
-                b2=np.asarray(b2, dtype=np.float64),
-                vp_flat=np.asarray(vp_flat, dtype=np.float64),
-                vpa_flat=np.asarray(vpa_flat, dtype=np.float64),
-                meas_base=np.asarray(meas_base, dtype=np.float64),
-                e_bins=np.asarray(e_bins, dtype=np.float64),
-                mu_bins=np.asarray(mu_bins, dtype=np.float64),
-                pphi_bins=np.asarray(pphi_bins, dtype=np.float64),
-                mass=float(mass),
-                e_charge=float(e_charge),
-                ev_to_joule=float(XGCDistribution.EV_TO_JOULE),
-            )
-            sum_weighted[:, :, :] = sum_weighted_flat.reshape(sum_weighted.shape)
-            sum_weights[:, :, :] = sum_weights_flat.reshape(sum_weights.shape)
+            den_arr = np.asarray(dist.den, dtype=np.float64)
+            temp_arr = np.asarray(dist.temp_ev, dtype=np.float64)
+            flow_arr = np.asarray(dist.flow, dtype=np.float64)
+            fg_arr = np.asarray(dist.fg_temp_ev, dtype=np.float64)
+            pot_arr = np.asarray(potential, dtype=np.float64)
+            psi_arr = np.asarray(psi, dtype=np.float64)
+            r_arr = np.asarray(r, dtype=np.float64)
+            b0_arr = np.asarray(b0, dtype=np.float64)
+            b1_arr = np.asarray(b1, dtype=np.float64)
+            b2_arr = np.asarray(b2, dtype=np.float64)
+            vp_arr = np.asarray(vp_flat, dtype=np.float64)
+            vpa_arr = np.asarray(vpa_flat, dtype=np.float64)
+            meas_arr = np.asarray(meas_base, dtype=np.float64)
+            ebin_arr = np.asarray(e_bins, dtype=np.float64)
+            mubin_arr = np.asarray(mu_bins, dtype=np.float64)
+            pbin_arr = np.asarray(pphi_bins, dtype=np.float64)
+
+            # Chunked OpenMP execution for approximate progress updates.
+            ntri = triangles.shape[0]
+            target_updates = 200
+            chunk = max(1, ntri // target_updates)
+            starts = range(0, ntri, chunk)
+            for s in _progress_iter(starts, (ntri + chunk - 1) // chunk, "analytic fm avg (omp)"):
+                e = min(s + chunk, ntri)
+                sw_chunk, ww_chunk = _analytic_fm_accumulate_openmp(
+                    triangles=triangles[s:e],
+                    tri_area=tri_area[s:e],
+                    bary_q=bary_q,
+                    w_cfg=w_cfg,
+                    den=den_arr,
+                    temp_ev=temp_arr,
+                    flow=flow_arr,
+                    fg_temp_ev=fg_arr,
+                    potential=pot_arr,
+                    psi=psi_arr,
+                    r=r_arr,
+                    b0=b0_arr,
+                    b1=b1_arr,
+                    b2=b2_arr,
+                    vp_flat=vp_arr,
+                    vpa_flat=vpa_arr,
+                    meas_base=meas_arr,
+                    e_bins=ebin_arr,
+                    mu_bins=mubin_arr,
+                    pphi_bins=pbin_arr,
+                    mass=float(mass),
+                    e_charge=float(e_charge),
+                    ev_to_joule=float(XGCDistribution.EV_TO_JOULE),
+                )
+                sum_weighted_flat += sw_chunk
+                sum_weights_flat += ww_chunk
         finally:
             if prev_threads is not None:
                 _numba.set_num_threads(prev_threads)
@@ -613,6 +637,8 @@ def average_distribution_emu_pphi(
     bins: Tuple[int, int, int] = (180, 180, 300),
     bins_fm: Tuple[int, int, int] | None = None,
     separate_fm: bool = False,
+    fm_openmp: bool = True,
+    fm_openmp_threads: int | None = None,
 ) -> Dict[str, np.ndarray]:
     """Average distribution on a regular (energy, mu, P_phi) grid.
 
@@ -632,6 +658,9 @@ def average_distribution_emu_pphi(
         bins_fm: Optional bins for Maxwellian branch when `separate_fm=True`.
             If None, uses `bins`.
         separate_fm: Use analytic Maxwellian averaging + original f_g averaging and sum.
+        fm_openmp: Use OpenMP/numba parallel path for analytic Maxwellian branch.
+            Default True.
+        fm_openmp_threads: Optional number of threads for analytic Maxwellian branch.
 
     Returns:
         Dictionary with keys:
@@ -669,6 +698,8 @@ def average_distribution_emu_pphi(
             dist=dist,
             potential=potential,
             bins=bins_fm,
+            openmp=fm_openmp,
+            openmp_threads=fm_openmp_threads,
         )
 
         removed_maxwellian_comp = False
