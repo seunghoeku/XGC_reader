@@ -230,7 +230,6 @@ def get_eqd_from_eqdsk(g, search_radius=0.1):
 # This has overlapping feature with find_x_point of geqdsk_reader.py
 # need to merge them in the future.
 
-import numpy as np
 from scipy.interpolate import RectBivariateSpline
 from scipy.optimize import minimize
 

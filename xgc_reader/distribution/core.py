@@ -256,7 +256,7 @@ class XGCDistribution:
         
         #apply vp_vol_fac at boundary of vpara
         self.f[:,:,0] = self.f[:,:,0] * self.VP_VOL_FAC
-        self.f[:,:,1] = self.f[:,:,1] * self.VP_VOL_FAC
+        self.f[:,:,-1] = self.f[:,:,-1] * self.VP_VOL_FAC
 
         #get vspace volume
         vspace_vol = self.fg_temp_ev * np.sqrt(1/(np.pi*2)) * self.vgrid.dvperp * self.vgrid.dvpara
@@ -299,7 +299,7 @@ class XGCDistribution:
         self.f[:,0,:] = self.f[:,0,:] / self.MU_VOL_FAC
         self.f[:,-1,:] = self.f[:,-1,:] / self.MU_VOL_FAC
         self.f[:,:,0] = self.f[:,:,0] / self.VP_VOL_FAC
-        self.f[:,:,1] = self.f[:,:,1] / self.VP_VOL_FAC
+        self.f[:,:,-1] = self.f[:,:,-1] / self.VP_VOL_FAC
 
         # update maxwellian moments
         if(no_update):
