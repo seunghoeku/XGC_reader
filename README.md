@@ -1,36 +1,56 @@
 # XGC_reader
-Python script for XGC data analysis
+Python package for XGC data analysis.
 
-Requires adios 2.10 or newer
+Requires ADIOS2 2.10 or newer.
 
+## Package layout
 
-### xgc_reader.py
+The code is now organized under a single package root, `xgc_reader`.
 
-The `xgc_reader.py` script is part of the XGC1 loader module for regenerating general plots using ADIOS2. It reads data from XGC simulations, including 1D results and other small data outputs. The script provides functions to read all steps of a variable, define constants, and handle file reading operations.
+- `xgc_reader/`: core XGC reader package (`xgc1` and analysis modules)
+- `xgc_reader/input/`: input-data readers and transforms
+- `xgc_reader/distribution/`: distribution-function classes
+- `xgc_reader_old.py`: legacy compatibility module (kept as-is)
 
-### xgc_utils.py
+## New import paths
 
-The purpose of `xgc_utils.py` is to provide utility functions and helper methods for XGC input data. 
+### Core reader
 
-### eqd_file_reader.py
+```python
+import xgc_reader
+x = xgc_reader.xgc1("/path/to/xgc")
+```
 
-The `eqd_file_reader.py` script is responsible for reading and processing EQDSK files. It contains functions to extract equilibrium data from the dictionary of EQDSK data and create an `eqd_class` object. The script refines the magnetic axis and X-point locations, sets appropriate psi values, and extracts relevant parameters such as magnetic field values and plasma current.
+### Input modules
 
-### geqdsk_reader.py
+```python
+from xgc_reader.input.eqd import eqd_class, get_eqd_from_eqdsk
+from xgc_reader.input.geqdsk import geqdsk_reader
+from xgc_reader.input.profiles import load_prf, save_prf, read_kefit_profile
+from xgc_reader.input.profile_transforms import merge
+```
 
-In `geqdsk_reader.py`, GEQDSK files are read based on the `freeqdsk` module. The script extracts additional data such as R and Z grids for psi data, magnetic axis coordinates, poloidal flux values, and other equilibrium parameters. It also provides functions to refine the magnetic axis and X-point locations using 2D cubic spline interpolation and optimization techniques.
+### Distribution module
 
+```python
+from xgc_reader.distribution.core import VelocityGrid, XGCDistribution
+```
 
-### xgc_distribution.py
+## Backward compatibility
 
-In `xgc_distribution.py`, a `VelocityGrid` class is defined to represent a velocity grid for a distribution function. The class initializes with parameters related to velocity points and ranges. It likely contains methods to handle velocity grid calculations and manipulations for distribution function analysis.
+Legacy top-level modules are still available as wrappers:
 
+- `eqd_file_reader.py`
+- `geqdsk_reader.py`
+- `xgc_utils.py`
+- `xgc_distribution.py`
 
-### profile_input_reader.py
+These wrappers re-export the moved code and emit deprecation warnings. Existing scripts should keep working, but new code should use `xgc_reader.*` paths.
 
-The `profile_input_reader.py` script is not ready.
-Use read_prf in `xgc_utils.py`
+## Notes
 
+- `xgc_reader_old.py` remains unchanged for compatibility workflows.
+- `profile_input_reader.py` is still not ready; use `xgc_reader.input.profiles` instead.
 
 
 
