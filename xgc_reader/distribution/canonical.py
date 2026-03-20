@@ -24,8 +24,13 @@ except Exception:  # pragma: no cover - optional dependency
     _HAS_NUMBA = False
 
 
-def _distribution_without_perp_jacobian(dist: XGCDistribution) -> np.ndarray:
-    """Convert f(v_perp, v_para) to d^3v form by removing v_perp Jacobian."""
+def distribution_without_perp_jacobian(dist: XGCDistribution) -> np.ndarray:
+    """Convert the stored distribution to d^3v form by removing the v_perp Jacobian.
+
+    The returned array uses the same shape as the source distribution:
+    ``(nnodes, nvperp, nvpdata)``. For full-f distributions, ``dist.f`` is
+    converted; otherwise ``dist.f_g`` is converted.
+    """
     f_in = dist.f if dist.has_maxwellian else dist.f_g
     f_out = np.zeros_like(f_in)
     f_out[:, 1 : dist.vgrid.nvperp, :] = (
@@ -34,6 +39,30 @@ def _distribution_without_perp_jacobian(dist: XGCDistribution) -> np.ndarray:
     )
     f_out[:, 0, :] = f_in[:, 0, :] / (dist.vgrid.vperp[1] / 3.0)
     return f_out
+
+
+def distribution_with_perp_jacobian(dist: XGCDistribution, f_d3v: np.ndarray) -> np.ndarray:
+    """Convert a d^3v-form distribution back to the stored v_perp-weighted form."""
+    f_d3v = np.asarray(f_d3v)
+
+    target_shape = dist.f.shape if dist.has_maxwellian else dist.f_g.shape
+    if f_d3v.shape != target_shape:
+        raise ValueError(
+            f"f_d3v shape {f_d3v.shape} does not match distribution shape {target_shape}"
+        )
+
+    f_out = np.zeros_like(f_d3v)
+    f_out[:, 1 : dist.vgrid.nvperp, :] = (
+        f_d3v[:, 1 : dist.vgrid.nvperp, :]
+        * dist.vgrid.vperp[np.newaxis, 1 : dist.vgrid.nvperp, np.newaxis]
+    )
+    f_out[:, 0, :] = f_d3v[:, 0, :] * (dist.vgrid.vperp[1] / 3.0)
+    return f_out
+
+
+def _distribution_without_perp_jacobian(dist: XGCDistribution) -> np.ndarray:
+    """Backward-compatible alias for internal callers."""
+    return distribution_without_perp_jacobian(dist)
 
 
 def _cell_index_and_frac(x: np.ndarray, bins: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -662,7 +691,7 @@ def average_distribution_emu_pphi(
     if separate_fm:
         # Keep full-f d^3v representation from the original distribution
         # (before any remove_maxwellian call), as requested.
-        f_wo_perp_full_before = _distribution_without_perp_jacobian(dist)
+        f_wo_perp_full_before = distribution_without_perp_jacobian(dist)
 
         fm_out = average_analytic_maxwellian_emu_pphi(
             xr=xr,
@@ -740,7 +769,7 @@ def average_distribution_emu_pphi(
     nvpdata = dist.vgrid.nvpdata
 
     E, mu, Pphi = canonical_coordinates(xr=xr, dist=dist, potential=potential)
-    f_wo_perp = _distribution_without_perp_jacobian(dist)
+    f_wo_perp = distribution_without_perp_jacobian(dist)
     f_wo_perp_for_interp = f_wo_perp
 
     e_bins = np.linspace(np.min(E), np.max(E), nen)
