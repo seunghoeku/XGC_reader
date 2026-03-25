@@ -24,14 +24,17 @@ except Exception:  # pragma: no cover - optional dependency
     _HAS_NUMBA = False
 
 
-def distribution_without_perp_jacobian(dist: XGCDistribution) -> np.ndarray:
+def distribution_without_perp_jacobian(
+    dist: XGCDistribution, f: np.ndarray | None = None
+) -> np.ndarray:
     """Convert the stored distribution to d^3v form by removing the v_perp Jacobian.
 
     The returned array uses the same shape as the source distribution:
     ``(nnodes, nvperp, nvpdata)``. For full-f distributions, ``dist.f`` is
-    converted; otherwise ``dist.f_g`` is converted.
+    converted; otherwise ``dist.f_g`` is converted. Pass ``f`` to convert
+    that array instead.
     """
-    f_in = dist.f if dist.has_maxwellian else dist.f_g
+    f_in = f if f is not None else (dist.f if dist.has_maxwellian else dist.f_g)
     f_out = np.zeros_like(f_in)
     f_out[:, 1 : dist.vgrid.nvperp, :] = (
         f_in[:, 1 : dist.vgrid.nvperp, :]
