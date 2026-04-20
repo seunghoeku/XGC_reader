@@ -592,6 +592,209 @@ def average_analytic_maxwellian_emu_pphi(
     }
 
 
+def average_mc_maxwellian_emu_pphi(
+    xr,
+    dist: XGCDistribution,
+    potential: np.ndarray | None = None,
+    bins: Tuple[int, int, int] = (180, 180, 300),
+    nq_vperp: int = 3,
+    nq_vpara: int = 3,
+    n_mc_cfg: int = 7,
+    mc_mode: str = "stratified",
+    random_seed: int | None = None,
+    openmp: bool = False,
+    openmp_threads: int | None = None,
+) -> Dict[str, np.ndarray]:
+    """Average analytic Maxwellian in (E, mu, P_phi) using Monte Carlo config sampling.
+
+    Velocity-space integration uses the same Gauss quadrature as the analytic
+    version. The Monte Carlo component applies only to configuration-space
+    sampling inside each triangle.
+
+    Args:
+        openmp: Accepted for API compatibility with the analytic version.
+        openmp_threads: Accepted for API compatibility with the analytic version.
+    """
+    del openmp, openmp_threads
+
+    if nq_vperp < 1 or nq_vpara < 1:
+        raise ValueError("nq_vperp and nq_vpara must be >= 1")
+    if n_mc_cfg < 1:
+        raise ValueError("n_mc_cfg must be >= 1")
+    if mc_mode not in ("stratified", "random"):
+        raise ValueError("mc_mode must be 'stratified' or 'random'")
+    if not hasattr(xr.mesh, "cnct"):
+        raise AttributeError("xr.mesh.cnct is required")
+
+    nen, nmu, npphi = bins
+    nn = dist.nnodes
+    nvperp = dist.vgrid.nvperp
+    nvpdata = dist.vgrid.nvpdata
+
+    E_ref, mu_ref, Pphi_ref = canonical_coordinates(xr=xr, dist=dist, potential=potential)
+    e_bins = np.linspace(np.min(E_ref), np.max(E_ref), nen)
+    mu_bins = np.linspace(0.0, np.max(mu_ref), nmu)
+    pphi_bins = np.linspace(np.min(Pphi_ref), np.max(Pphi_ref), npphi)
+
+    sum_weighted = np.zeros((nen, nmu, npphi), dtype=np.float64)
+    sum_weights = np.zeros((nen, nmu, npphi), dtype=np.float64)
+
+    e_charge = XGCDistribution.E_CHARGE
+    mass = dist.mass
+    vperp_c = dist.vgrid.vperp
+    vpara_c = dist.vgrid.vpara
+    rng = np.random.default_rng(random_seed)
+    vperp_edges = _cell_edges_from_centers(vperp_c, clamp_nonnegative=True)
+    vpara_edges = _cell_edges_from_centers(vpara_c, clamp_nonnegative=False)
+    gperp_x, gperp_w = np.polynomial.legendre.leggauss(nq_vperp)
+    gpara_x, gpara_w = np.polynomial.legendre.leggauss(nq_vpara)
+    vp_lo = vperp_edges[:-1, None]
+    vp_hi = vperp_edges[1:, None]
+    vp_pts = 0.5 * ((vp_hi - vp_lo) * gperp_x[None, :] + (vp_hi + vp_lo))
+    vp_w = 0.5 * (vp_hi - vp_lo) * gperp_w[None, :]
+    vpa_lo = vpara_edges[:-1, None]
+    vpa_hi = vpara_edges[1:, None]
+    vpa_pts = 0.5 * ((vpa_hi - vpa_lo) * gpara_x[None, :] + (vpa_hi + vpa_lo))
+    vpa_w = 0.5 * (vpa_hi - vpa_lo) * gpara_w[None, :]
+    quad_shape = (nvperp, nq_vperp, nvpdata, nq_vpara)
+    vp_flat = np.broadcast_to(vp_pts[:, :, None, None], quad_shape).reshape(-1)
+    vpa_flat = np.broadcast_to(vpa_pts[None, None, :, :], quad_shape).reshape(-1)
+    vw_flat = (vp_w[:, :, None, None] * vpa_w[None, None, :, :]).reshape(-1)
+    meas_base = np.sqrt(1.0 / (2.0 * np.pi)) * vp_flat * vw_flat
+
+    r = xr.mesh.r
+    z = xr.mesh.z
+    psi = xr.mesh.psi
+    b0 = xr.bfield[0, :]
+    b1 = xr.bfield[1, :]
+    b2 = xr.bfield[2, :]
+    triangles = np.asarray(xr.mesh.cnct, dtype=np.int64)
+    if potential is None:
+        potential = np.zeros(nn, dtype=np.float64)
+    else:
+        potential = np.asarray(potential, dtype=np.float64)
+
+    def _deposit(e_i: np.ndarray, mu_i: np.ndarray, pphi_i: np.ndarray, val: np.ndarray, w: np.ndarray) -> None:
+        ie0, we_m1, we_0, we_p1 = _tsc_1d_weights(e_i, e_bins)
+        jm0, wm_m1, wm_0, wm_p1 = _tsc_1d_weights(mu_i, mu_bins)
+        kp0, wp_m1, wp_0, wp_p1 = _tsc_1d_weights(pphi_i, pphi_bins)
+        ie_m1 = np.clip(ie0 - 1, 0, nen - 1)
+        ie_0 = np.clip(ie0, 0, nen - 1)
+        ie_p1 = np.clip(ie0 + 1, 0, nen - 1)
+        jm_m1 = np.clip(jm0 - 1, 0, nmu - 1)
+        jm_0 = np.clip(jm0, 0, nmu - 1)
+        jm_p1 = np.clip(jm0 + 1, 0, nmu - 1)
+        kp_m1 = np.clip(kp0 - 1, 0, npphi - 1)
+        kp_0 = np.clip(kp0, 0, npphi - 1)
+        kp_p1 = np.clip(kp0 + 1, 0, npphi - 1)
+        for ie_idx, we in ((ie_m1, we_m1), (ie_0, we_0), (ie_p1, we_p1)):
+            for jm_idx, wm in ((jm_m1, wm_m1), (jm_0, wm_0), (jm_p1, wm_p1)):
+                w_em = we * wm
+                np.add.at(sum_weighted, (ie_idx, jm_idx, kp_m1), w_em * wp_m1 * val)
+                np.add.at(sum_weighted, (ie_idx, jm_idx, kp_0), w_em * wp_0 * val)
+                np.add.at(sum_weighted, (ie_idx, jm_idx, kp_p1), w_em * wp_p1 * val)
+                np.add.at(sum_weights, (ie_idx, jm_idx, kp_m1), w_em * wp_m1 * w)
+                np.add.at(sum_weights, (ie_idx, jm_idx, kp_0), w_em * wp_0 * w)
+                np.add.at(sum_weights, (ie_idx, jm_idx, kp_p1), w_em * wp_p1 * w)
+
+    def _progress_iter(it, total, desc):
+        try:
+            from tqdm.auto import tqdm  # type: ignore
+
+            return tqdm(it, total=total, desc=desc)
+        except Exception:
+            return it
+
+    def _sample_cfg_and_accumulate(
+        den_q: float,
+        temp_q: float,
+        flow_q: float,
+        fg_q: float,
+        psi_q: float,
+        r_q: float,
+        b2_q: float,
+        bmag_q: float,
+        pot_q: float,
+        cfg_weight: float,
+    ) -> None:
+        if bmag_q <= 0.0:
+            return
+        temp_q = max(temp_q, 1e-12)
+        fg_q = max(fg_q, 1e-30)
+        v_n_q = np.sqrt(fg_q * e_charge / mass)
+        vperp_phys = vp_flat * v_n_q
+        vpara_phys = vpa_flat * v_n_q
+        en = 0.5 * mass * ((vpara_phys - flow_q) ** 2 + vperp_phys**2) / (temp_q * XGCDistribution.EV_TO_JOULE)
+        f_q = den_q * np.exp(-en) / (temp_q**1.5) * np.sqrt(fg_q)
+
+        e_i = e_charge * pot_q + 0.5 * mass * (vperp_phys**2 + vpara_phys**2)
+        mu_i = 0.5 * mass * vperp_phys**2 / bmag_q
+        pphi_i = psi_q + (mass / e_charge) * r_q * vpara_phys * b2_q / bmag_q
+
+        wt = cfg_weight * fg_q * meas_base
+        _deposit(
+            e_i=e_i,
+            mu_i=mu_i,
+            pphi_i=pphi_i,
+            val=f_q * wt,
+            w=wt,
+        )
+
+    def _sample_triangle_barycentric(nsample: int) -> np.ndarray:
+        if mc_mode == "stratified":
+            u1 = (np.arange(nsample, dtype=np.float64) + rng.random(nsample)) / nsample
+            u2 = rng.random(nsample)
+        else:
+            u1 = rng.random(nsample)
+            u2 = rng.random(nsample)
+        s = np.sqrt(u1)
+        b0 = 1.0 - s
+        b1 = s * (1.0 - u2)
+        b2 = s * u2
+        return np.stack((b0, b1, b2), axis=1)
+
+    r0 = r[triangles[:, 0]]
+    r1 = r[triangles[:, 1]]
+    r2 = r[triangles[:, 2]]
+    z0 = z[triangles[:, 0]]
+    z1 = z[triangles[:, 1]]
+    z2 = z[triangles[:, 2]]
+    tri_area = 0.5 * np.abs((r1 - r0) * (z2 - z0) - (r2 - r0) * (z1 - z0))
+
+    for itri, tri_nodes in _progress_iter(enumerate(triangles), triangles.shape[0], "mc fm avg"):
+        area = tri_area[itri]
+        if area <= 0.0:
+            continue
+        bary_samples = _sample_triangle_barycentric(n_mc_cfg)
+        cfg_weight = area / n_mc_cfg
+        for bary in bary_samples:
+            den_q = float(np.dot(bary, dist.den[tri_nodes]))
+            temp_q = float(np.dot(bary, dist.temp_ev[tri_nodes]))
+            flow_q = float(np.dot(bary, dist.flow[tri_nodes]))
+            fg_q = float(np.dot(bary, dist.fg_temp_ev[tri_nodes]))
+            pot_q = float(np.dot(bary, potential[tri_nodes]))
+            psi_q = float(np.dot(bary, psi[tri_nodes]))
+            r_q = float(np.dot(bary, r[tri_nodes]))
+            b0_q = float(np.dot(bary, b0[tri_nodes]))
+            b1_q = float(np.dot(bary, b1[tri_nodes]))
+            b2_q = float(np.dot(bary, b2[tri_nodes]))
+            bmag_q = np.sqrt(b0_q * b0_q + b1_q * b1_q + b2_q * b2_q)
+            _sample_cfg_and_accumulate(den_q, temp_q, flow_q, fg_q, psi_q, r_q, b2_q, bmag_q, pot_q, cfg_weight)
+
+    fmean = np.where(sum_weights > 0.0, sum_weighted / sum_weights, 0.0)
+    return {
+        "fmean": fmean,
+        "sum_weighted": sum_weighted,
+        "sum_weights": sum_weights,
+        "E_bins": e_bins,
+        "mu_bins": mu_bins,
+        "pphi_bins": pphi_bins,
+        "E": E_ref,
+        "mu": mu_ref,
+        "Pphi": Pphi_ref,
+    }
+
+
 def interpolate_fmean_to_velocity_grid(
     fmean: np.ndarray,
     E: np.ndarray,
@@ -669,8 +872,14 @@ def average_distribution_emu_pphi(
     bins: Tuple[int, int, int] = (180, 180, 300),
     bins_fm: Tuple[int, int, int] | None = None,
     separate_fm: bool = False,
-    fm_openmp: bool = True,
+    fm_method: str = "mc",
+    fm_openmp: bool = False,
     fm_openmp_threads: int | None = None,
+    fm_nq_vperp: int = 3,
+    fm_nq_vpara: int = 3,
+    fm_mc_cfg: int = 7,
+    fm_mc_mode: str = "stratified",
+    fm_mc_seed: int | None = None,
 ) -> Dict[str, np.ndarray]:
     """Average distribution on a regular (energy, mu, P_phi) grid.
 
@@ -689,10 +898,16 @@ def average_distribution_emu_pphi(
         - linear interpolation for f
         bins_fm: Optional bins for Maxwellian branch when `separate_fm=True`.
             If None, uses `bins`.
-        separate_fm: Use analytic Maxwellian averaging + original f_g averaging and sum.
-        fm_openmp: Use OpenMP/numba parallel path for analytic Maxwellian branch.
-            Default True.
-        fm_openmp_threads: Optional number of threads for analytic Maxwellian branch.
+        separate_fm: Use Maxwellian averaging + original f_g averaging and sum.
+        fm_method: Maxwellian branch method, either "mc" or "analytic".
+        fm_openmp: Kept for API compatibility with legacy callers.
+        fm_openmp_threads: Kept for API compatibility with legacy callers.
+        fm_nq_vperp: Gauss quadrature order in v_perp for the Maxwellian branch.
+        fm_nq_vpara: Gauss quadrature order in v_para for the Maxwellian branch.
+        fm_mc_cfg: Number of Monte Carlo samples per triangle.
+        fm_mc_mode: Monte Carlo sampling mode in configuration space,
+            either "stratified" or "random".
+        fm_mc_seed: Optional RNG seed for reproducibility.
 
     Returns:
         Dictionary with keys:
@@ -712,6 +927,8 @@ def average_distribution_emu_pphi(
 
     if not hasattr(xr.mesh, "cnct"):
         raise AttributeError("xr.mesh.cnct is required")
+    if fm_method not in ("mc", "analytic"):
+        raise ValueError("fm_method must be 'mc' or 'analytic'")
 
     if bins_fm is None:
         bins_fm = bins
@@ -725,14 +942,31 @@ def average_distribution_emu_pphi(
         # (before any remove_maxwellian call), as requested.
         f_wo_perp_full_before = distribution_without_perp_jacobian(dist)
 
-        fm_out = average_analytic_maxwellian_emu_pphi(
-            xr=xr,
-            dist=dist,
-            potential=potential,
-            bins=bins_fm,
-            openmp=fm_openmp,
-            openmp_threads=fm_openmp_threads,
-        )
+        if fm_method == "analytic":
+            fm_out = average_analytic_maxwellian_emu_pphi(
+                xr=xr,
+                dist=dist,
+                potential=potential,
+                bins=bins_fm,
+                nq_vperp=fm_nq_vperp,
+                nq_vpara=fm_nq_vpara,
+                openmp=fm_openmp,
+                openmp_threads=fm_openmp_threads,
+            )
+        else:
+            fm_out = average_mc_maxwellian_emu_pphi(
+                xr=xr,
+                dist=dist,
+                potential=potential,
+                bins=bins_fm,
+                nq_vperp=fm_nq_vperp,
+                nq_vpara=fm_nq_vpara,
+                n_mc_cfg=fm_mc_cfg,
+                mc_mode=fm_mc_mode,
+                random_seed=fm_mc_seed,
+                openmp=fm_openmp,
+                openmp_threads=fm_openmp_threads,
+            )
 
         removed_maxwellian_comp = False
         if dist.has_maxwellian:
