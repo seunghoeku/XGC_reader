@@ -2,8 +2,43 @@
 
 import numpy as np
 import adios2
+import re
 from matplotlib.tri import Triangulation
 from functools import singledispatchmethod
+
+
+def _as_scalar(value):
+    arr = np.asarray(value)
+    if arr.shape == ():
+        return arr.item()
+    if arr.size == 1:
+        return arr.reshape(()).item()
+    return value
+
+
+def _read_xgc_input_value(input_filename, name):
+    """Read a simple scalar assignment from an XGC namelist-style input file."""
+    try:
+        with open(input_filename, "r") as f:
+            for line in f:
+                line = line.split("!", 1)[0]
+                match = re.search(rf"\b{name}\s*=\s*([^,\s/]+)", line, flags=re.IGNORECASE)
+                if match:
+                    value = match.group(1).strip().strip("'\"").replace("D", "e").replace("d", "e")
+                    return float(value)
+    except OSError:
+        return None
+    return None
+
+
+def _read_phi_spacing_from_input(input_filename):
+    wedge_n = _read_xgc_input_value(input_filename, "sml_wedge_n")
+    nphi_total = _read_xgc_input_value(input_filename, "sml_nphi_total")
+    if wedge_n is None or nphi_total is None:
+        return None, None
+    wedge_angle = 2.0 * np.pi / wedge_n
+    delta_phi = wedge_angle / nphi_total
+    return wedge_angle, delta_phi
 
 
 class meshdata(object):
@@ -12,15 +47,16 @@ class meshdata(object):
     @singledispatchmethod
     def __init__(self, path):
         """Initialize from path to data directory."""
+        self.path = path
         with adios2.FileReader(path + "xgc.mesh.bp") as fm:
-            self.load_mesh(fm)
+            self.load_mesh(fm, input_filename=path + "input")
 
     @__init__.register(adios2.FileReader)
     def _(self, fm: adios2.FileReader):
         """Initialize from already open file/campaign."""
         self.load_mesh(fm, "xgc.mesh.bp/")
 
-    def load_mesh(self, fm: adios2.FileReader, prefix=''):
+    def load_mesh(self, fm: adios2.FileReader, prefix='', input_filename=None):
         """Load mesh data from ADIOS2 file."""
         rz = fm.read(prefix + 'rz')
         self.cnct = fm.read(prefix + 'nd_connect_list')
@@ -65,14 +101,26 @@ class meshdata(object):
             print("No region in xgc.mesh.bp") 
         
         try:
-            self.wedge_angle = fm.read(prefix + 'wedge_angle')
+            self.wedge_angle = _as_scalar(fm.read(prefix + 'wedge_angle'))
         except:
+            self.wedge_angle = None
             print("No wedge_angle in xgc.mesh.bp") 
         
         try:
-            self.delta_phi = fm.read(prefix + 'delta_phi')
+            self.delta_phi = _as_scalar(fm.read(prefix + 'delta_phi'))
         except:
+            self.delta_phi = None
             print("No delta_phi in xgc.mesh.bp") 
+
+        if (self.wedge_angle is None or self.delta_phi is None) and input_filename is not None:
+            wedge_angle, delta_phi = _read_phi_spacing_from_input(input_filename)
+            if wedge_angle is not None and delta_phi is not None:
+                if self.wedge_angle is None:
+                    self.wedge_angle = wedge_angle
+                if self.delta_phi is None:
+                    self.delta_phi = delta_phi
+            else:
+                print("Could not read sml_wedge_n and sml_nphi_total from input")
 
         self.nnodes = np.size(self.r)  # same as n_n 
 
