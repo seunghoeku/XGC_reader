@@ -9,7 +9,6 @@ from pathlib import Path
 import adios2
 import numpy as np
 from numpy.lib.format import open_memmap
-from matplotlib.tri import LinearTriInterpolator
 
 from ..mesh_data import meshdata
 from .field_following import EquilibriumMagneticField
@@ -29,6 +28,15 @@ class FineToroidalGrid:
     wedge_angle: float
     delta_phi_source: float
     delta_phi_fine: float
+
+
+@dataclass(frozen=True)
+class TriangleInterpolationMap:
+    """Barycentric map from arbitrary R-Z points to mesh-node values."""
+
+    nodes: np.ndarray
+    weights: np.ndarray
+    valid: np.ndarray
 
 
 def _resolve_path(path_or_xgc):
@@ -78,22 +86,87 @@ def _make_grid(mesh, nphi_input, nphi_source):
     )
 
 
-def _build_component_interpolators(triobj, source_fields):
-    return [
-        [LinearTriInterpolator(triobj, field[plane_index]) for plane_index in range(field.shape[0])]
-        for field in source_fields
-    ]
+def _stack_dB_fields(source_fields):
+    return np.stack(source_fields, axis=-1)
 
 
-def _interpolate_components(interpolators, plane_index, r, z, fill_value=np.nan):
-    out = []
-    for component_interpolators in interpolators:
-        interpolator = component_interpolators[plane_index]
-        values = interpolator(r, z)
-        if np.ma.isMaskedArray(values):
-            values = values.filled(fill_value)
-        out.append(np.asarray(values))
-    return out
+def _build_triangle_map(triobj, r, z):
+    finder = triobj.get_trifinder()
+    triangle_index = np.asarray(finder(r, z), dtype=np.int64)
+    valid = triangle_index >= 0
+
+    npoints = triangle_index.size
+    nodes = np.zeros((npoints, 3), dtype=np.int64)
+    weights = np.zeros((npoints, 3), dtype=np.float64)
+    if not np.any(valid):
+        return TriangleInterpolationMap(nodes=nodes, weights=weights, valid=valid)
+
+    triangles = triobj.triangles
+    nodes_valid = triangles[triangle_index[valid]]
+    nodes[valid] = nodes_valid
+
+    x = np.asarray(r, dtype=np.float64)[valid]
+    y = np.asarray(z, dtype=np.float64)[valid]
+
+    x1 = triobj.x[nodes_valid[:, 0]]
+    y1 = triobj.y[nodes_valid[:, 0]]
+    x2 = triobj.x[nodes_valid[:, 1]]
+    y2 = triobj.y[nodes_valid[:, 1]]
+    x3 = triobj.x[nodes_valid[:, 2]]
+    y3 = triobj.y[nodes_valid[:, 2]]
+
+    denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+    w0 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / denom
+    w1 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / denom
+    w2 = 1.0 - w0 - w1
+    weights[valid, 0] = w0
+    weights[valid, 1] = w1
+    weights[valid, 2] = w2
+
+    return TriangleInterpolationMap(nodes=nodes, weights=weights, valid=valid)
+
+
+def _apply_triangle_map(field_plane, mapping, fill_value=np.nan):
+    gathered = field_plane[mapping.nodes]
+    values = np.einsum("ij,ijk->ik", mapping.weights, gathered, optimize=True)
+    if not np.all(mapping.valid):
+        values[~mapping.valid, :] = fill_value
+    return values
+
+
+def _build_offset_maps(mesh, magnetic_field, grid, ff_step, ff_order):
+    left_maps = {}
+    right_maps = {}
+    if grid.mult == 1:
+        return left_maps, right_maps
+
+    r0 = mesh.r
+    z0 = mesh.z
+    phi_left = 0.0
+    phi_right = grid.delta_phi_source
+
+    for offset in range(1, grid.mult):
+        phi_target = offset * grid.delta_phi_fine
+        left_pos = magnetic_field.follow_field(
+            r0,
+            z0,
+            phi_target,
+            phi_left,
+            ff_step=ff_step,
+            ff_order=ff_order,
+        )
+        right_pos = magnetic_field.follow_field(
+            r0,
+            z0,
+            phi_target,
+            phi_right,
+            ff_step=ff_step,
+            ff_order=ff_order,
+        )
+        left_maps[offset] = _build_triangle_map(mesh.triobj, left_pos.r, left_pos.z)
+        right_maps[offset] = _build_triangle_map(mesh.triobj, right_pos.r, right_pos.z)
+
+    return left_maps, right_maps
 
 
 def interpolate_dB_to_fine_toroidal_grid(
@@ -158,6 +231,7 @@ def interpolate_dB_to_fine_toroidal_grid(
         magnetic_field = EquilibriumMagneticField(path)
 
     source_fields = _read_dB_fields(xgc3d_path, dtype=dtype)
+    source = _stack_dB_fields(source_fields)
     nphi_source, nnode = source_fields[0].shape
     if nnode != mesh.nnodes:
         raise ValueError(f"dB nnode={nnode} does not match mesh.nnodes={mesh.nnodes}")
@@ -174,60 +248,17 @@ def interpolate_dB_to_fine_toroidal_grid(
                 f"({grid.nphi}, {nnode}, {len(_DB_FIELD_NAMES)})"
             )
 
-    r0 = mesh.r
-    z0 = mesh.z
-    interpolators = None if grid.mult == 1 else _build_component_interpolators(mesh.triobj, source_fields)
+    left_maps, right_maps = _build_offset_maps(mesh, magnetic_field, grid, ff_step, ff_order)
 
-    for iphi_fine in range(grid.nphi):
-        left = iphi_fine // grid.mult
-        offset = iphi_fine - left * grid.mult
-
-        if offset == 0:
-            for icomp, field in enumerate(source_fields):
-                fine[iphi_fine, :, icomp] = field[left]
-            continue
-
+    for left in range(grid.nphi_source):
+        fine[left * grid.mult, :, :] = source[left]
         right = (left + 1) % grid.nphi_source
-        frac = float(offset) / float(grid.mult)
 
-        phi_target = iphi_fine * grid.delta_phi_fine
-        phi_left = left * grid.delta_phi_source
-        phi_right = (left + 1) * grid.delta_phi_source
-
-        left_pos = magnetic_field.follow_field(
-            r0,
-            z0,
-            phi_target,
-            phi_left,
-            ff_step=ff_step,
-            ff_order=ff_order,
-        )
-        right_pos = magnetic_field.follow_field(
-            r0,
-            z0,
-            phi_target,
-            phi_right,
-            ff_step=ff_step,
-            ff_order=ff_order,
-        )
-
-        left_values = _interpolate_components(
-            interpolators,
-            left,
-            left_pos.r,
-            left_pos.z,
-            fill_value=fill_value,
-        )
-        right_values = _interpolate_components(
-            interpolators,
-            right,
-            right_pos.r,
-            right_pos.z,
-            fill_value=fill_value,
-        )
-
-        for icomp, (left_value, right_value) in enumerate(zip(left_values, right_values)):
-            fine[iphi_fine, :, icomp] = (1.0 - frac) * left_value + frac * right_value
+        for offset in range(1, grid.mult):
+            frac = float(offset) / float(grid.mult)
+            left_values = _apply_triangle_map(source[left], left_maps[offset], fill_value=fill_value)
+            right_values = _apply_triangle_map(source[right], right_maps[offset], fill_value=fill_value)
+            fine[left * grid.mult + offset, :, :] = (1.0 - frac) * left_values + frac * right_values
 
     return fine, grid
 
