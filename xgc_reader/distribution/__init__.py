@@ -1,6 +1,12 @@
 """Distribution data structures and operations."""
 
-from .core import VelocityGrid, XGCDistribution, poloidal_smooth_f_init, vspace_smooth
+from .core import (
+    VelocityGrid,
+    XGCDistribution,
+    convert_distribution,
+    poloidal_smooth_f_init,
+    vspace_smooth,
+)
 from .canonical import (
     average_distribution_emu_pphi,
     average_analytic_maxwellian_emu_pphi,
@@ -14,6 +20,7 @@ from .canonical import (
 __all__ = [
     "VelocityGrid",
     "XGCDistribution",
+    "convert_distribution",
     "poloidal_smooth_f_init",
     "vspace_smooth",
     "canonical_coordinates",

@@ -518,14 +518,21 @@ class XGCDistribution:
         self.update_maxwellian_moments(xr)
 
     # contour plot at the given node
-    def contour_plot(self, nnode):
+    def contour_plot(self, nnode, ax=None, colorbar=True, title=None, levels=150, cmap='viridis'):
         if(self.has_maxwellian):
             f=self.f
         else:
             f=self.f_g
 
-        contour = plt.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:])
-        plt.colorbar(contour)
+        if(ax is None):
+            fig, ax = plt.subplots()
+            
+        contour = ax.contourf(self.vgrid.vpara, self.vgrid.vperp, f[nnode,:,:], levels=levels, cmap=cmap)
+        if(colorbar):
+            ax.colorbar(contour)
+        if(title):
+            ax.set_title(title)
+        return contour
 
 
     def exp_ad(self, x):
