@@ -22,13 +22,14 @@ Basic Usage:
 from .base import xgc1
 from .constants import cnst
 from .utils import read_all_steps, check_adios2_version
+from .plotting import contourf_ad2_var
 
 __version__ = "1.0.0"
 __author__ = "XGC Development Team"
 __license__ = "MIT"
 
 # Main interface - expose xgc1 class at package level
-__all__ = ['xgc1', 'cnst', 'read_all_steps', 'check_adios2_version']
+__all__ = ['xgc1', 'cnst', 'read_all_steps', 'check_adios2_version', 'contourf_ad2_var']
 
 
 def optimize_performance():

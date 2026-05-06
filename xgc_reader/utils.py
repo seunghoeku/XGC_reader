@@ -234,12 +234,11 @@ def read_one_ad2_var(filestr, varstr, with_time=False):
     """
     with adios2.FileReader(filestr) as f:
         var = f.read(varstr)
-        
-    if with_time:
+        if not with_time:
+            return var
         try:
-            time = f.read('time')
-            return var, time
-        except:
-            return var, 0
-    else:
-        return var
+            t = f.read('time')
+        except Exception:
+            print(f"Warning: could not read 'time' from {filestr}")
+            t = 0
+        return var, t

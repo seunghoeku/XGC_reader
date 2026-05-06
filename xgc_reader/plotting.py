@@ -82,6 +82,48 @@ def plot1d_if(xgc_instance, obj, **kwargs):
     return fig, ax
 
 
+def contourf_ad2_var(xgc_instance, filename, var, iphi=0, fig=None, ax=None, title=None, vm=None, cmap='jet', levels=150, cbar=True, time_unit='ms'):
+    """
+    Read data and create a filled contour plot of a variable on the mesh.
+    
+    Parameters
+    ----------
+    xgc_instance : xgc1
+    """
+    if plt is None:
+        raise ImportError("matplotlib is required for plotting functions")
+    if not hasattr(xgc_instance, 'mesh'):
+        raise ValueError("Mesh data not loaded. Call setup_mesh() first.")
+
+    varstr = var
+    arr, time = xgc_instance.read_one_ad2_var(filename, varstr, with_time=True)
+    arr = arr[iphi, :]
+
+    if fig is None or ax is None:
+        fig, ax = plt.subplots()
+
+    cf = ax.tricontourf(xgc_instance.mesh.triobj, arr, cmap=cmap, extend='both', levels=levels)
+
+    if cbar:
+        fig.colorbar(cf, ax=ax)
+
+    if time_unit == 'ms':
+        time = time * 1E3
+    elif time_unit == 's':
+        time = time
+    elif time_unit == 'us':
+        time = time * 1E6
+    else:
+        raise ValueError(f"Invalid time unit: {time_unit}")
+    if title is None:
+        title = f'{varstr} at plane {iphi} at time {time:.3f} {time_unit}'
+   
+    ax.set_title(title)
+
+    return fig, ax
+
+
+
 def contourf_one_var(xgc_instance, var, fig=None, ax=None, title=None, vm=None, cmap='jet', levels=150, cbar=True):
     """
     Create a filled contour plot of a variable on the mesh.

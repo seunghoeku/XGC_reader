@@ -18,7 +18,7 @@ from .heat_diagnostics import datahlp, datahl2, datahl2_sp, load_heatdiag, load_
 from .field_data import databfm
 # others.py is now empty - functions moved to appropriate modules
 from .report import print_plasma_info, report_heatdiag2, report_profiles, report_turb_2d, turb_2d_report
-from .plotting import plot1d_if, contourf_one_var, show_sep, plot2d
+from .plotting import plot1d_if, contourf_one_var, contourf_ad2_var, show_sep, plot2d
 from .geometry import (find_sep_idx, find_surf_idx, find_tmask, find_line_segment,
                       fsa_simple, flux_sum_simple, midplane_var, d_dpsi)
 from .analysis import (turb_intensity, source_simple, plot_source_simple, 
@@ -345,7 +345,11 @@ class xgc1(object):
         if(fig is None or ax is None):
             fig, ax = plt.subplots()
         return contourf_one_var(self, var, fig=fig, ax=ax, title=title, vm=vm, cmap=cmap, levels=levels, cbar=cbar)
-    
+
+    def contourf_ad2_var(self, filename, var, iphi=0, fig=None, ax=None, title=None, vm=None, cmap='jet', levels=150, cbar=True, time_unit='ms'):
+        """Read an ADIOS2 file and plot a filled contour of one variable on the mesh."""
+        return contourf_ad2_var(self, filename, var, iphi=iphi, fig=fig, ax=ax, title=title, vm=vm, cmap=cmap, levels=levels, cbar=cbar, time_unit=time_unit)
+
     def show_sep(self, ax, style='-'):
         """Show separatrix on plot."""
         return show_sep(self, ax, style)
