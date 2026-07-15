@@ -257,6 +257,199 @@ def _trace_steps_abm2(rhs, mesh, r, z, phi, dphi, nsteps, crossings_r, crossings
     return r, z, phi, active, lost_step, lost_crossing
 
 
+def _trace_steps_abm3(rhs, mesh, r, z, phi, dphi, nsteps, crossings_r, crossings_z, steps_per_period):
+    active = _inside_mesh(mesh.triobj.get_trifinder(), r, z)
+    lost_step = np.full(r.shape, -1, dtype=np.int64)
+    lost_crossing = np.full(r.shape, -1, dtype=np.int64)
+    lost_step[~active] = 0
+    lost_crossing[~active] = 0
+    trifinder = mesh.triobj.get_trifinder()
+
+    if nsteps < 1:
+        return r, z, phi, active, lost_step, lost_crossing
+
+    f_nm2_r = np.zeros_like(r)
+    f_nm2_z = np.zeros_like(z)
+    f_nm1_r = np.zeros_like(r)
+    f_nm1_z = np.zeros_like(z)
+    f_n_r = np.zeros_like(r)
+    f_n_z = np.zeros_like(z)
+
+    def record_crossing(istep):
+        if (istep + 1) % steps_per_period == 0:
+            icross = (istep + 1) // steps_per_period - 1
+            crossings_r[icross, active] = r[active]
+            crossings_z[icross, active] = z[active]
+
+    if not np.any(active):
+        return r, z, phi, active, lost_step, lost_crossing
+
+    idx = np.nonzero(active)[0]
+    f_nm2_r[idx], f_nm2_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+
+    for istep in range(min(2, nsteps)):
+        if not np.any(active):
+            break
+
+        idx = np.nonzero(active)[0]
+        r_next, z_next, phi_next = rk2_step_phi(rhs, r[idx], z[idx], phi[idx], dphi)
+        r[idx], z[idx], phi[idx] = r_next, z_next, phi_next
+        inside = np.zeros_like(active, dtype=bool)
+        inside[idx] = _inside_mesh(trifinder, r_next, z_next)
+        active = _mark_lost(active, inside, lost_step, lost_crossing, istep, steps_per_period)
+        if np.any(active):
+            idx = np.nonzero(active)[0]
+            if istep == 0:
+                f_nm1_r[idx], f_nm1_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+            else:
+                f_n_r[idx], f_n_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+        record_crossing(istep)
+
+    if nsteps <= 2:
+        return r, z, phi, active, lost_step, lost_crossing
+
+    for istep in range(2, nsteps):
+        if not np.any(active):
+            break
+
+        idx = np.nonzero(active)[0]
+        r_pred = r[idx] + (dphi / 12.0) * (
+            23.0 * f_n_r[idx] - 16.0 * f_nm1_r[idx] + 5.0 * f_nm2_r[idx]
+        )
+        z_pred = z[idx] + (dphi / 12.0) * (
+            23.0 * f_n_z[idx] - 16.0 * f_nm1_z[idx] + 5.0 * f_nm2_z[idx]
+        )
+        phi_next = phi[idx] + dphi
+        f_pred_r, f_pred_z = rhs.derivs(r_pred, z_pred, phi_next)
+
+        r_next = r[idx] + (dphi / 12.0) * (5.0 * f_pred_r + 8.0 * f_n_r[idx] - f_nm1_r[idx])
+        z_next = z[idx] + (dphi / 12.0) * (5.0 * f_pred_z + 8.0 * f_n_z[idx] - f_nm1_z[idx])
+
+        f_nm2_next_r = f_nm1_r[idx].copy()
+        f_nm2_next_z = f_nm1_z[idx].copy()
+        f_nm1_next_r = f_n_r[idx].copy()
+        f_nm1_next_z = f_n_z[idx].copy()
+        r[idx], z[idx], phi[idx] = r_next, z_next, phi_next
+        inside = np.zeros_like(active, dtype=bool)
+        inside[idx] = _inside_mesh(trifinder, r_next, z_next)
+        active = _mark_lost(active, inside, lost_step, lost_crossing, istep, steps_per_period)
+        if np.any(active):
+            active_local = active[idx]
+            idx_active = idx[active_local]
+            f_nm2_r[idx_active], f_nm2_z[idx_active] = f_nm2_next_r[active_local], f_nm2_next_z[active_local]
+            f_nm1_r[idx_active], f_nm1_z[idx_active] = f_nm1_next_r[active_local], f_nm1_next_z[active_local]
+            f_n_r[idx_active], f_n_z[idx_active] = rhs.derivs(r[idx_active], z[idx_active], phi[idx_active])
+
+        record_crossing(istep)
+
+    return r, z, phi, active, lost_step, lost_crossing
+
+
+def _trace_steps_abm4(rhs, mesh, r, z, phi, dphi, nsteps, crossings_r, crossings_z, steps_per_period):
+    active = _inside_mesh(mesh.triobj.get_trifinder(), r, z)
+    lost_step = np.full(r.shape, -1, dtype=np.int64)
+    lost_crossing = np.full(r.shape, -1, dtype=np.int64)
+    lost_step[~active] = 0
+    lost_crossing[~active] = 0
+    trifinder = mesh.triobj.get_trifinder()
+
+    if nsteps < 1:
+        return r, z, phi, active, lost_step, lost_crossing
+
+    f_nm3_r = np.zeros_like(r)
+    f_nm3_z = np.zeros_like(z)
+    f_nm2_r = np.zeros_like(r)
+    f_nm2_z = np.zeros_like(z)
+    f_nm1_r = np.zeros_like(r)
+    f_nm1_z = np.zeros_like(z)
+    f_n_r = np.zeros_like(r)
+    f_n_z = np.zeros_like(z)
+
+    def record_crossing(istep):
+        if (istep + 1) % steps_per_period == 0:
+            icross = (istep + 1) // steps_per_period - 1
+            crossings_r[icross, active] = r[active]
+            crossings_z[icross, active] = z[active]
+
+    if not np.any(active):
+        return r, z, phi, active, lost_step, lost_crossing
+
+    idx = np.nonzero(active)[0]
+    f_nm3_r[idx], f_nm3_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+
+    for istep in range(min(3, nsteps)):
+        if not np.any(active):
+            break
+
+        idx = np.nonzero(active)[0]
+        r_next, z_next, phi_next = rk2_step_phi(rhs, r[idx], z[idx], phi[idx], dphi)
+        r[idx], z[idx], phi[idx] = r_next, z_next, phi_next
+        inside = np.zeros_like(active, dtype=bool)
+        inside[idx] = _inside_mesh(trifinder, r_next, z_next)
+        active = _mark_lost(active, inside, lost_step, lost_crossing, istep, steps_per_period)
+        if np.any(active):
+            idx = np.nonzero(active)[0]
+            if istep == 0:
+                f_nm2_r[idx], f_nm2_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+            elif istep == 1:
+                f_nm1_r[idx], f_nm1_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+            else:
+                f_n_r[idx], f_n_z[idx] = rhs.derivs(r[idx], z[idx], phi[idx])
+        record_crossing(istep)
+
+    if nsteps <= 3:
+        return r, z, phi, active, lost_step, lost_crossing
+
+    for istep in range(3, nsteps):
+        if not np.any(active):
+            break
+
+        idx = np.nonzero(active)[0]
+        r_pred = r[idx] + (dphi / 24.0) * (
+            55.0 * f_n_r[idx]
+            - 59.0 * f_nm1_r[idx]
+            + 37.0 * f_nm2_r[idx]
+            - 9.0 * f_nm3_r[idx]
+        )
+        z_pred = z[idx] + (dphi / 24.0) * (
+            55.0 * f_n_z[idx]
+            - 59.0 * f_nm1_z[idx]
+            + 37.0 * f_nm2_z[idx]
+            - 9.0 * f_nm3_z[idx]
+        )
+        phi_next = phi[idx] + dphi
+        f_pred_r, f_pred_z = rhs.derivs(r_pred, z_pred, phi_next)
+
+        r_next = r[idx] + (dphi / 24.0) * (
+            9.0 * f_pred_r + 19.0 * f_n_r[idx] - 5.0 * f_nm1_r[idx] + f_nm2_r[idx]
+        )
+        z_next = z[idx] + (dphi / 24.0) * (
+            9.0 * f_pred_z + 19.0 * f_n_z[idx] - 5.0 * f_nm1_z[idx] + f_nm2_z[idx]
+        )
+
+        f_nm3_next_r = f_nm2_r[idx].copy()
+        f_nm3_next_z = f_nm2_z[idx].copy()
+        f_nm2_next_r = f_nm1_r[idx].copy()
+        f_nm2_next_z = f_nm1_z[idx].copy()
+        f_nm1_next_r = f_n_r[idx].copy()
+        f_nm1_next_z = f_n_z[idx].copy()
+        r[idx], z[idx], phi[idx] = r_next, z_next, phi_next
+        inside = np.zeros_like(active, dtype=bool)
+        inside[idx] = _inside_mesh(trifinder, r_next, z_next)
+        active = _mark_lost(active, inside, lost_step, lost_crossing, istep, steps_per_period)
+        if np.any(active):
+            active_local = active[idx]
+            idx_active = idx[active_local]
+            f_nm3_r[idx_active], f_nm3_z[idx_active] = f_nm3_next_r[active_local], f_nm3_next_z[active_local]
+            f_nm2_r[idx_active], f_nm2_z[idx_active] = f_nm2_next_r[active_local], f_nm2_next_z[active_local]
+            f_nm1_r[idx_active], f_nm1_z[idx_active] = f_nm1_next_r[active_local], f_nm1_next_z[active_local]
+            f_n_r[idx_active], f_n_z[idx_active] = rhs.derivs(r[idx_active], z[idx_active], phi[idx_active])
+
+        record_crossing(istep)
+
+    return r, z, phi, active, lost_step, lost_crossing
+
+
 def trace_poincare_map(
     r0,
     z0,
@@ -280,9 +473,9 @@ def trace_poincare_map(
     ``fine_dB_filename`` nor ``delta_b_field`` is provided, the perturbation is
     treated as zero and only the background equilibrium field is followed.
 
-    ``integrator`` can be ``"rk2"`` or ``"abm2"``. ``"abm2"`` uses an
-    Adams-Bashforth predictor and Adams-Moulton corrector after one RK2
-    bootstrap step.
+    ``integrator`` can be ``"rk2"``, ``"abm2"``, ``"abm3"``, or ``"abm4"``.
+    Adams-Bashforth-Moulton integrators use RK2 bootstrap steps before switching to their
+    predictor-corrector stencil.
 
     Field lines that leave the triangular R-Z mesh are marked lost. After the
     lost step, their remaining crossing positions stay NaN.
@@ -341,8 +534,34 @@ def trace_poincare_map(
             crossings_z,
             steps_per_period,
         )
+    elif integrator == "abm3":
+        r, z, phi, active, lost_step, lost_crossing = _trace_steps_abm3(
+            rhs,
+            mesh,
+            r,
+            z,
+            phi,
+            dphi,
+            nsteps,
+            crossings_r,
+            crossings_z,
+            steps_per_period,
+        )
+    elif integrator == "abm4":
+        r, z, phi, active, lost_step, lost_crossing = _trace_steps_abm4(
+            rhs,
+            mesh,
+            r,
+            z,
+            phi,
+            dphi,
+            nsteps,
+            crossings_r,
+            crossings_z,
+            steps_per_period,
+        )
     else:
-        raise ValueError("integrator must be 'rk2' or 'abm2'")
+        raise ValueError("integrator must be 'rk2', 'abm2', 'abm3', or 'abm4'")
 
     fieldline_index = np.broadcast_to(np.arange(r.size), crossings_r.shape)
     crossing_index = np.broadcast_to(np.arange(n_crossings)[:, None], crossings_r.shape)
