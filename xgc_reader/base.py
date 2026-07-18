@@ -149,6 +149,12 @@ class xgc1(object):
             self.od.psi00n = self.od.psi00 / self.psix
         except:
             print("psix is not defined - call load_units() to get psix to get psi00n")
+
+        #gstep
+        try:
+            self.od.step = self.od.gstep
+        except:
+            print('gstep is not defined')
         
         # Temperatures
         try: 
