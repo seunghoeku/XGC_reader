@@ -374,9 +374,19 @@ class xgc1(object):
         """Find line segment along flux surface."""
         return find_line_segment(self, n, psi_target, dir)
     
-    def turb_intensity(self, istart, iend, skip, vartype='f3d_eden', mode='all'):
+    def turb_intensity(
+        self,
+        istart,
+        iend,
+        skip,
+        vartype='f3d_eden',
+        mode='all',
+        toroidal='average',
+    ):
         """Calculate turbulence intensity from 3D data files."""
-        return turb_intensity(self, istart, iend, skip, vartype, mode)
+        return turb_intensity(
+            self, istart, iend, skip, vartype, mode, toroidal
+        )
     
     def source_simple(self, step, period, sp='i_', moments='energy', source_type='heat_torque'):
         """Simple source analysis from diagnostic files."""

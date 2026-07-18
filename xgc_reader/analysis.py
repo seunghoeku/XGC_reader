@@ -16,7 +16,15 @@ except ImportError:
         return x
 
 
-def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='all'):
+def turb_intensity(
+    xgc_instance,
+    istart,
+    iend,
+    skip,
+    vartype='f3d_eden',
+    mode='all',
+    toroidal='average',
+):
     """
     Calculate turbulence intensity from 3D data files.
     
@@ -34,16 +42,28 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
         Variable type ('f3d_eden', '3d_dpot', 'f3d_iTperp')
     mode : str, optional
         Analysis mode ('all', 'upper', 'lower')
+    toroidal : str, optional
+        Toroidal reduction mode. ``'average'`` returns the existing toroidally
+        averaged profile, while ``'resolved'`` retains the toroidal-plane axis.
         
     Returns
     -------
     psi_n : array_like
         Normalized psi coordinates
+    time : array_like
+        Times corresponding to the successfully read data files.
     turb_int : array_like
-        Turbulence intensity profile
+        Turbulence intensity profile. Shape is ``(ntime, npsi)`` for
+        ``toroidal='average'`` and ``(ntime, nphi, npsi)`` for
+        ``toroidal='resolved'``. Toroidal plane angles can be constructed as
+        ``np.arange(nphi) * xgc_instance.mesh.delta_phi`` when ``delta_phi``
+        is available.
     """
     if not hasattr(xgc_instance, 'mesh'):
         raise ValueError("Mesh data not loaded. Call setup_mesh() first.")
+
+    if toroidal not in ('average', 'resolved'):
+        raise ValueError("toroidal must be 'average' or 'resolved'")
     
     # File and variable type selection
     if vartype == 'f3d_eden': 
@@ -73,6 +93,7 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
 
     turb_intensity_list = []
     time_list = []
+    resolved_nphi = None
     pbar = tqdm(range(istart, iend, skip))
     
     for count, i in enumerate(pbar):
@@ -102,13 +123,32 @@ def turb_intensity(xgc_instance, istart, iend, skip, vartype='f3d_eden', mode='a
                     err_msg_count = 1
                 var0 = 1
 
-        dns = var2 * var2
-        dns = np.mean(dns, axis=0)  # toroidal average
-        dns = dns / (var0 * var0)   # normalization with n0
-        
         # Import fsa_simple from geometry module
         from .geometry import fsa_simple
-        dns_surf = fsa_simple(xgc_instance, dns * msk)  # flux surface average with masking
+
+        if toroidal == 'average':
+            # Preserve the historical operation order and (ntime, npsi) result.
+            dns = var2 * var2
+            dns = np.mean(dns, axis=0)
+            dns = dns / (var0 * var0)
+            dns_surf = fsa_simple(xgc_instance, dns * msk)
+        else:
+            # var0 has no toroidal axis, so numpy broadcasts it over nphi.
+            dns = (var2 * var2) / (np.asarray(var0) ** 2)
+            dns = dns * msk[None, :]
+            nphi = dns.shape[0]
+            if resolved_nphi is None:
+                resolved_nphi = nphi
+            elif nphi != resolved_nphi:
+                raise ValueError(
+                    "Toroidal plane count changed between time steps: "
+                    f"expected {resolved_nphi}, got {nphi} at step {i}"
+                )
+            dns_surf = np.stack([
+                fsa_simple(xgc_instance, dns[iphi])
+                for iphi in range(nphi)
+            ])
+
         turb_intensity_list.append(dns_surf)
 
     psi_n = xgc_instance.mesh.psi_surf / xgc_instance.psix
