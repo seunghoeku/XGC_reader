@@ -306,6 +306,27 @@ def report_turb_2d(xgc_instance, i_name='Main ion', i2_name='Impurity',
         plt.xlabel('Poloidal Flux')
         plt.ylabel('Time (ms)')
 
+    # Electron particle flux by ExB
+    if (hasattr(xgc_instance, 'electron_on') and xgc_instance.electron_on
+            and hasattr(xgc_instance.od, 'pfluxexbe')):
+        fig, ax = plt.subplots()
+        cf = ax.contourf(xgc_instance.od.psi[pm], xgc_instance.od.time[tm] * 1E3,
+                       xgc_instance.od.pfluxexbe[tm, pm], levels=50, cmap=cmap)
+        fig.colorbar(cf)
+        plt.title('Elec Particle Flux by ExB (#/s)')
+        plt.xlabel('Poloidal Flux')
+        plt.ylabel('Time (ms)')
+
+    # Main-ion particle flux by ExB
+    if hasattr(xgc_instance.od, 'pfluxexbi'):
+        fig, ax = plt.subplots()
+        cf = ax.contourf(xgc_instance.od.psi[pm], xgc_instance.od.time[tm] * 1E3,
+                       xgc_instance.od.pfluxexbi[tm, pm], levels=50, cmap=cmap)
+        fig.colorbar(cf)
+        plt.title('Ion G.C. Particle Flux by ExB (#/s)')
+        plt.xlabel('Poloidal Flux')
+        plt.ylabel('Time (ms)')
+
 
 def turb_2d_report(xgc_instance, i_name='Main ion', i2_name='Impurity', 
                   pm=slice(0, -1), tm=slice(0, -1), wnorm=1E6, cmap='jet'):
