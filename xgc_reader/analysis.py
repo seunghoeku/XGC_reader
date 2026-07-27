@@ -353,9 +353,10 @@ def midplane_var_all(xgc_instance, istart, iend, skip, varname='dpot', ftype='3d
     Read all midplane data and return it.
     """
 
-    nt=int( (iend-istart)/skip ) +1
+    steps = range(istart, iend, skip)
+    nt = len(steps)
     time=np.zeros(nt)
-    pbar = tqdm(range(istart,iend,skip))
+    pbar = tqdm(steps)
     for i in pbar:
         f=adios2.FileReader('xgc.' + ftype + '.%5.5d.bp' % (i))
         it=int( (i-istart)/skip )
@@ -465,7 +466,8 @@ def reading_3d_data(xgc_instance, istart, iend, skip, ms, varname='dpot', ftype=
     """
     
     ns=np.size(ms)
-    nt=int( (iend-istart)/skip ) +1
+    steps = range(istart, iend, skip)
+    nt = len(steps)
 
     #get nphi
     i=istart
@@ -477,7 +479,7 @@ def reading_3d_data(xgc_instance, istart, iend, skip, ms, varname='dpot', ftype=
 
     var4=np.zeros((nphi,nt,ns))
     time=np.zeros(nt)
-    pbar = tqdm(range(istart,iend,skip))
+    pbar = tqdm(steps)
     for i in pbar:
         f=adios2.FileReader('xgc.' + ftype + '.%5.5d.bp' % (i))
         it=int( (i-istart)/skip )
