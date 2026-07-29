@@ -209,7 +209,7 @@ class LegacyVolumeView:
 class LegacyOneDView:
     """Flatten XGC-Analysis OneDDiag names into the historical namespace."""
 
-    _TEMPERATURE_ALIASES = {
+    _DERIVED_ALIASES = {
         "Te": "e.T",
         "Ti": "i.T",
         "Ti2": "i2.T",
@@ -220,6 +220,16 @@ class LegacyOneDView:
         "Ti7": "i7.T",
         "Ti8": "i8.T",
         "Ti9": "i9.T",
+        "Lte": "e.Lt",
+        "Lti": "i.Lt",
+        "Lti2": "i2.Lt",
+        "Lti3": "i3.Lt",
+        "Lti4": "i4.Lt",
+        "Lti5": "i5.Lt",
+        "Lti6": "i6.Lt",
+        "Lti7": "i7.Lt",
+        "Lti8": "i8.Lt",
+        "Lti9": "i9.Lt",
     }
     _NUMBERED_SPECIES_PREFIXES = (
         "i2",
@@ -295,13 +305,19 @@ class LegacyOneDView:
         return self._oneddiag.d_dpsi(var, coordinate)
 
     def __getattr__(self, name):
-        if name in self._TEMPERATURE_ALIASES:
-            return self._cached_array(self._TEMPERATURE_ALIASES[name], derived=True)
+        if name in self._DERIVED_ALIASES:
+            return self._cached_array(self._DERIVED_ALIASES[name], derived=True)
 
         if name == "psi_mks":
             return self._legacy_psi_mks()
 
-        if name in {"psi", "psi00", "time", "step", "gstep", "tmask"}:
+        if name == "tmask":
+            try:
+                return self._oneddiag.tmask
+            except AttributeError:
+                return self._oneddiag.get_time_mask()
+
+        if name in {"psi", "psi00", "time", "step", "gstep"}:
             return getattr(self._oneddiag, name)
 
         standard_name = self._standard_name(name)
@@ -490,6 +506,40 @@ class AnalysisBackend:
                 )
         return self.simulation
 
+    def supports_simulation(self):
+        """Return whether the catalog has XGC-Analysis Simulation inputs."""
+        if self.simulation is not None:
+            return True
+
+        catalog = self.ensure_catalog()
+        simulation_type = self._get_api()["Simulation"]
+        products = getattr(catalog, "products", {})
+        if any(
+            name not in products
+            for name in simulation_type.REQUIRED_CATALOG_PRODUCTS
+        ):
+            return False
+
+        has_text = getattr(catalog, "has_text", None)
+        return has_text is not None and all(
+            has_text(name)
+            for name in simulation_type.REQUIRED_CATALOG_TEXTS
+        )
+
+    def legacy_static_source(self):
+        """Return a path or existing campaign handle for legacy static readers."""
+        if not self.is_campaign:
+            return self.location.rstrip(os.sep) + os.sep
+
+        catalog = self.ensure_catalog()
+        campaign_reader = getattr(catalog, "campaign_reader", None)
+        if campaign_reader is None:
+            raise RuntimeError(
+                "XGC-Analysis campaign catalog has no open reader for "
+                "legacy static-product access."
+            )
+        return campaign_reader
+
     @staticmethod
     def _build_compatible_static_buffer(
         simulation_type,
@@ -577,15 +627,17 @@ class AnalysisBackend:
         return views
 
     def load_oned(self):
-        sim = self.ensure_simulation()
+        catalog = self.ensure_catalog()
         factory = self._oned_factory
         if factory is None:
             factory = self._get_api()["OneDDiag"]
-        oneddiag = factory(
-            path=getattr(sim, "data_directory", self.location),
-            simulation=sim,
-            catalog=sim.catalog,
-        )
+        kwargs = {
+            "path": getattr(self.simulation, "data_directory", self.location),
+            "catalog": catalog,
+        }
+        if self.simulation is not None:
+            kwargs["simulation"] = self.simulation
+        oneddiag = factory(**kwargs)
         return LegacyOneDView(oneddiag)
 
     def load_heatdiag2(self):

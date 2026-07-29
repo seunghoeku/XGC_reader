@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import numpy as np
 
@@ -71,6 +71,8 @@ class _OneDDiag:
         self.derived = {
             "i.T": np.full((2, 3), 100.0),
             "e.T": np.full((2, 3), 50.0),
+            "i.Lt": np.full((2, 3), 4.0),
+            "e.Lt": np.full((2, 3), 5.0),
         }
         self.get_array_calls = {}
         self.get_derived_array_calls = {}
@@ -93,6 +95,10 @@ class _OneDDiag:
 
     def d_dpsi(self, var, psi):
         return var / psi
+
+    def get_time_mask(self):
+        self.tmask = np.array([0, 1])
+        return self.tmask
 
 
 class _HeatDiag:
@@ -269,6 +275,9 @@ class CompatibilityViewTests(unittest.TestCase):
         self.assertIs(impurity_density, source.data["i2.gc_density_df_1d"])
         self.assertEqual(source.get_array_calls["i.gc_density_df_1d"], 1)
         self.assertEqual(source.get_derived_array_calls["i.T"], 1)
+        self.assertIs(view.Lti, source.derived["i.Lt"])
+        self.assertIs(view.Lte, source.derived["e.Lt"])
+        np.testing.assert_array_equal(view.tmask, [0, 1])
         self.assertEqual(view.psi_mks.shape, (2, 3))
         self.assertTrue(np.shares_memory(view.psi_mks, source.psi_mks))
         self.assertIs(view.psi_mks, view.psi_mks)
@@ -373,6 +382,40 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertEqual(units["sml_dt"], 1.0e-7)
         self.assertEqual(units["sml_wedge_n"], 1)
 
+    def test_facade_load_unitsm_falls_back_for_old_units_file(self):
+        catalog = _Catalog()
+        reader = xgc1(
+            "/fake/old-run",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+
+        with patch.object(
+            reader,
+            "load_unitsm_old",
+        ) as old_units_reader:
+            reader.load_unitsm()
+
+        old_units_reader.assert_called_once_with()
+
+    def test_ascii_units_parser_handles_fortran_values_and_comments(self):
+        reader = xgc1.__new__(xgc1)
+        contents = """
+            sml_dt = 4.3830033179758812D-007;
+            sml_wedge_n = 2; ! comment
+            % ignored comment
+            diag_1d_period = 5;
+        """
+
+        with patch("builtins.open", mock_open(read_data=contents)):
+            values = reader.load_m("/fake/units.m")
+
+        self.assertEqual(values["sml_wedge_n"], 2.0)
+        self.assertEqual(values["diag_1d_period"], 5.0)
+        self.assertAlmostEqual(values["sml_dt"], 4.3830033179758812e-7)
+
     def test_static_prefetch_filters_variables_missing_from_older_outputs(self):
         catalog = SimpleNamespace(
             products={
@@ -470,6 +513,72 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertIs(reader.od.i_gc_density_df_1d, source.data["i.gc_density_df_1d"])
         self.assertIs(reader.od.Ti, source.derived["i.T"])
         np.testing.assert_allclose(reader.od.psi00n, source.psi00)
+        self.assertEqual(reader.od.beta_e.shape, (2, 3))
+
+    def test_facade_loads_oned_without_requiring_full_simulation(self):
+        catalog = _Catalog()
+        source = _OneDDiag()
+        captured = {}
+
+        def oned_factory(**kwargs):
+            captured.update(kwargs)
+            return source
+
+        reader = xgc1(
+            "/fake/oned-only",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+        reader._analysis_backend._oned_factory = oned_factory
+
+        reader.load_oned()
+
+        self.assertIs(reader.od.source, source)
+        self.assertIs(captured["catalog"], catalog)
+        self.assertNotIn("simulation", captured)
+        self.assertIsNone(reader.simulation)
+
+    def test_facade_uses_legacy_static_readers_for_incomplete_old_run(self):
+        catalog = _Catalog()
+        simulation_type = SimpleNamespace(
+            REQUIRED_CATALOG_PRODUCTS=(
+                "xgc.mesh.bp",
+                "xgc.equil.bp",
+                "xgc.bfield.bp",
+            ),
+            REQUIRED_CATALOG_TEXTS=("input",),
+        )
+        reader = xgc1(
+            "/fake/old-run",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+        reader._analysis_backend._api = {"Simulation": simulation_type}
+        mesh = object()
+        f0 = object()
+        volume = object()
+
+        with (
+            patch("xgc_reader.base.meshdata", return_value=mesh) as mesh_reader,
+            patch("xgc_reader.base.f0meshdata", return_value=f0) as f0_reader,
+            patch("xgc_reader.base.voldata", return_value=volume) as volume_reader,
+        ):
+            reader.setup_mesh()
+            reader.setup_f0mesh()
+            reader.load_volumes()
+
+        source = "/fake/old-run/"
+        mesh_reader.assert_called_once_with(source)
+        f0_reader.assert_called_once_with(source)
+        volume_reader.assert_called_once_with(source)
+        self.assertIs(reader.mesh, mesh)
+        self.assertIs(reader.f0, f0)
+        self.assertIs(reader.vol, volume)
+        self.assertIsNone(reader.simulation)
 
     def test_facade_reuses_analysis_gradient_and_mapping_matrices(self):
         simulation, plane, _catalog = _make_simulation()

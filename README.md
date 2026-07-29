@@ -70,6 +70,14 @@ backward compatibility,
 ADIOS Campaign Archives. ``load_bfieldm()`` likewise keeps its small legacy
 reader and reuses the catalog's open campaign handle when applicable.
 
+Older directory outputs that predate a complete XGC-Analysis ``Simulation``
+are also supported. ``load_unitsm()`` falls back to the ASCII ``units.m``
+reader when ``xgc.units.bp`` is absent, and standalone OneD diagnostics load
+directly through the XGC-Analysis catalog without requiring mesh/equilibrium
+products. If the catalog lacks the products required to construct a
+``Simulation``, the compatibility facade uses the existing static mesh, f0,
+and volume readers for that old dataset only.
+
 ### Input modules
 
 ```python

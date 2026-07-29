@@ -3,7 +3,6 @@
 import numpy as np
 import os
 import adios2
-from scipy.io import matlab
 
 from .constants import cnst
 from .utils import (check_adios2_version, adios2_get_shape, 
@@ -136,7 +135,12 @@ class xgc1(object):
     def load_unitsm(self):
         """For compatibility with older version."""
         if self._analysis_backend is not None:
-            self.load_units()
+            try:
+                self.load_units()
+            except KeyError as exc:
+                if "xgc.units.bp" not in str(exc):
+                    raise
+                self.load_unitsm_old()
             return
         try:
             self.load_units()
@@ -229,6 +233,13 @@ class xgc1(object):
             self.ion2_on = self.od.ion2_on
             if getattr(self.od, 'psi00', None) is not None and hasattr(self, 'psix'):
                 self.od.psi00n = self.od.psi00 / self.psix
+            if self.electron_on and hasattr(self, 'eq_axis_b'):
+                self.od.beta_e = (
+                    self.cnst.echarge
+                    * self.od.e_gc_density_df_1d
+                    * self.od.Te
+                    / (self.eq_axis_b**2 * 0.5 / self.cnst.mu0)
+                )
             self._sync_analysis_objects()
             return
 
@@ -318,13 +329,29 @@ class xgc1(object):
                 print('failed to find tmaks', tmp)
 
     def load_m(self, fname):
-        """Load MATLAB .m file."""
-        return matlab.loadmat(fname)
+        """Load XGC's ASCII ``key = value;`` parameter files."""
+        result = {}
+        with open(fname, 'r') as parameter_file:
+            for line in parameter_file:
+                line = line.split('!', 1)[0].split('%', 1)[0].strip()
+                if not line or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                value = value.strip().rstrip(';').strip()
+                result[key.strip()] = float(
+                    value.replace('D', 'e').replace('d', 'e')
+                )
+        return result
 
     def setup_mesh(self):
         """Set up mesh data."""
         if self._analysis_backend is not None:
-            self.mesh = self._analysis_backend.mesh_view()
+            if self._analysis_backend.supports_simulation():
+                self.mesh = self._analysis_backend.mesh_view()
+            else:
+                self.mesh = meshdata(
+                    self._analysis_backend.legacy_static_source()
+                )
             self._sync_analysis_objects()
         elif self.campaign:
             self.mesh = meshdata(self.campaign)
@@ -341,7 +368,12 @@ class xgc1(object):
     def setup_f0mesh(self):
         """Set up f0 mesh data."""
         if self._analysis_backend is not None:
-            self.f0 = self._analysis_backend.f0_view()
+            if self._analysis_backend.supports_simulation():
+                self.f0 = self._analysis_backend.f0_view()
+            else:
+                self.f0 = f0meshdata(
+                    self._analysis_backend.legacy_static_source()
+                )
             self._sync_analysis_objects()
         elif self.campaign:
             self.f0 = f0meshdata(self.campaign)
@@ -351,7 +383,12 @@ class xgc1(object):
     def load_volumes(self):
         """Load volume data."""
         if self._analysis_backend is not None:
-            self.vol = self._analysis_backend.volume_view()
+            if self._analysis_backend.supports_simulation():
+                self.vol = self._analysis_backend.volume_view()
+            else:
+                self.vol = voldata(
+                    self._analysis_backend.legacy_static_source()
+                )
             self._sync_analysis_objects()
         elif self.campaign:
             self.vol = voldata(self.campaign)
@@ -559,7 +596,10 @@ class xgc1(object):
     
     def load_grad_rz(self):
         """Load gradient R-Z matrices."""
-        if self._analysis_backend is not None:
+        if (
+            self._analysis_backend is not None
+            and self._analysis_backend.supports_simulation()
+        ):
             self.grad = self._analysis_backend.gradient_view()
             self._sync_analysis_objects()
             return
@@ -567,7 +607,10 @@ class xgc1(object):
     
     def load_ff_mapping(self):
         """Load field-following mapping matrices."""
-        if self._analysis_backend is not None:
+        if (
+            self._analysis_backend is not None
+            and self._analysis_backend.supports_simulation()
+        ):
             self.ff_mappings = self._analysis_backend.field_following_views()
             self._sync_analysis_objects()
         else:
