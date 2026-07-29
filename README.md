@@ -74,9 +74,10 @@ Older directory outputs that predate a complete XGC-Analysis ``Simulation``
 are also supported. ``load_unitsm()`` falls back to the ASCII ``units.m``
 reader when ``xgc.units.bp`` is absent, and standalone OneD diagnostics load
 directly through the XGC-Analysis catalog without requiring mesh/equilibrium
-products. If the catalog lacks the products required to construct a
-``Simulation``, the compatibility facade uses the existing static mesh, f0,
-and volume readers for that old dataset only.
+products. Heatdiag2 data can likewise be read from its catalog product without
+constructing a full ``Simulation``. If the catalog lacks the products required
+to construct a ``Simulation``, the compatibility facade uses the existing
+static mesh, f0, volume, and bfield readers for that old dataset only.
 
 ### Input modules
 

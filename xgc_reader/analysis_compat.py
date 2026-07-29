@@ -660,8 +660,8 @@ class AnalysisBackend:
         return LegacyOneDView(oneddiag)
 
     def load_heatdiag2(self):
-        sim = self.ensure_simulation()
-        product = getattr(sim.catalog, "products", {}).get("xgc.heatdiag2.bp")
+        catalog = self.ensure_catalog()
+        product = getattr(catalog, "products", {}).get("xgc.heatdiag2.bp")
         if product is not None and not getattr(product, "variables", {}):
             raise RuntimeError(
                 "Catalog product 'xgc.heatdiag2.bp' contains no readable "
@@ -670,11 +670,12 @@ class AnalysisBackend:
         factory = self._heatdiag_factory
         if factory is None:
             factory = self._get_api()["HeatDiag"]
-        variables = self._heatdiag_variables(sim.catalog, factory)
-        kwargs = {
-            "simulation": sim,
-            "catalog": sim.catalog,
-        }
+        variables = self._heatdiag_variables(catalog, factory)
+        kwargs = {"catalog": catalog}
+        if self.simulation is not None:
+            kwargs["simulation"] = self.simulation
+        else:
+            kwargs["data_dir"] = self.location
         if variables:
             kwargs["variables"] = variables
         heatdiag = factory(**kwargs)

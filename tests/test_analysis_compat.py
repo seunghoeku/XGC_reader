@@ -42,6 +42,19 @@ class _Catalog:
         self.close_count += 1
 
 
+class _BfieldReader:
+    def __init__(self):
+        self.values = {
+            "xgc.bfield.bp/bfield": np.arange(12.0).reshape(4, 3),
+            "xgc.bfield.bp/jpar_bg": np.arange(4.0),
+        }
+
+    def read(self, name):
+        if name not in self.values:
+            raise KeyError(name)
+        return self.values[name]
+
+
 class _Mesh:
     def __init__(self, plane):
         self._plane = plane
@@ -664,6 +677,48 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertTrue(np.shares_memory(reader.hl2.sp[0].number, source.arrays["e_number"]))
         self.assertEqual(reader.hl2.sp[0].q.shape, (2, 3))
 
+    def test_facade_loads_heatdiag2_without_requiring_full_simulation(self):
+        catalog = _Catalog()
+        source = _HeatDiag()
+        variable_names = set(source.wall_data) | set(source.arrays)
+        catalog.products["xgc.heatdiag2.bp"] = SimpleNamespace(
+            variables={name: object() for name in variable_names}
+        )
+        captured = {}
+
+        def heatdiag_factory(**kwargs):
+            captured.update(kwargs)
+            return source
+
+        heatdiag_factory.DEFAULT_VARS = tuple(source.wall_data) + (
+            "time",
+            "gstep",
+            "tindex",
+        )
+
+        reader = xgc1(
+            "/fake/heatdiag-only",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+        reader._analysis_backend._heatdiag_factory = heatdiag_factory
+        reader.unit_dic = {"sml_wedge_n": 1}
+        reader.psix = 1.0
+        reader.eq_axis_r = 1.7
+        reader.eq_axis_z = 0.0
+        reader.eq_x_r = 2.2
+        reader.eq_x_z = -0.4
+
+        reader.load_heatdiag2()
+
+        self.assertIs(reader.hl2.source, source)
+        self.assertIs(captured["catalog"], catalog)
+        self.assertEqual(captured["data_dir"], "/fake/heatdiag-only")
+        self.assertNotIn("simulation", captured)
+        self.assertIsNone(reader.simulation)
+
     def test_facade_rejects_empty_heatdiag2_product(self):
         simulation, _plane, catalog = _make_simulation()
         catalog.products["xgc.heatdiag2.bp"] = SimpleNamespace(variables={})
@@ -736,6 +791,39 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertIs(reader.bfm, bfieldm)
         np.testing.assert_array_equal(reader.bfm.rmido, [1.6, 1.8])
         np.testing.assert_array_equal(reader.bfm.psino, [0.9, 1.1])
+
+    def test_facade_bfield_uses_legacy_campaign_reader_without_simulation(self):
+        campaign_reader = _BfieldReader()
+        catalog = _Catalog()
+        catalog.campaign_reader = campaign_reader
+        simulation_type = SimpleNamespace(
+            REQUIRED_CATALOG_PRODUCTS=(
+                "xgc.mesh.bp",
+                "xgc.equil.bp",
+                "xgc.bfield.bp",
+            ),
+            REQUIRED_CATALOG_TEXTS=("input",),
+        )
+        reader = xgc1(
+            "/fake/archive.aca",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+        reader._analysis_backend._api = {"Simulation": simulation_type}
+
+        reader.load_bfield()
+
+        self.assertEqual(reader.bfield.shape, (3, 4))
+        np.testing.assert_array_equal(
+            reader.bfield,
+            campaign_reader.values["xgc.bfield.bp/bfield"].T,
+        )
+        self.assertIs(
+            reader.jpar_bg,
+            campaign_reader.values["xgc.bfield.bp/jpar_bg"],
+        )
 
     def test_backend_closes_catalog(self):
         simulation, _plane, catalog = _make_simulation()

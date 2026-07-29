@@ -125,7 +125,7 @@ class xgc1(object):
     def load_basic(cls, path='./', **kwargs):
         """Load basic XGC data including units, 1D, mesh, and volumes."""
         instance = cls(path, **kwargs)
-        instance.load_units()
+        instance.load_unitsm()
         instance.load_oned()
         instance.setup_mesh()
         instance.setup_f0mesh()
@@ -422,7 +422,10 @@ class xgc1(object):
 
     def load_bfield(self):
         """Load equilibrium bfield data."""
-        if self._analysis_backend is not None:
+        if (
+            self._analysis_backend is not None
+            and self._analysis_backend.supports_simulation()
+        ):
             self.bfield = self._analysis_backend.bfield_array()
             magnetic = self._analysis_backend.ensure_simulation().magnetic_field
             if hasattr(magnetic, 'jpar_bg_pd'):
@@ -430,21 +433,54 @@ class xgc1(object):
             self._sync_analysis_objects()
             return
 
+        if self._analysis_backend is not None and self._analysis_backend.is_campaign:
+            self._load_legacy_bfield(
+                self._analysis_backend.legacy_static_source(),
+                prefix='xgc.bfield.bp/',
+            )
+            self._sync_analysis_objects()
+            return
+
+        if self.campaign:
+            self._load_legacy_bfield(
+                self.campaign,
+                prefix='xgc.bfield.bp/',
+            )
+            return
+
         with adios2.FileReader(self.path + "xgc.bfield.bp") as f:
-            try:
-                self.bfield = f.read('bfield')
-            except: # try older version of bfield
-                self.bfield = f.read('/node_data[0]/values')
+            self._load_legacy_bfield(f)
 
-            if(self.bfield.shape[0]!=3): # not 3xN
-                self.bfield = np.transpose(self.bfield)
-                print('bfield shape is :', self.bfield.shape)            
-    
+    def _load_legacy_bfield(self, reader, prefix=''):
+        """Populate legacy bfield arrays from a BP file or campaign handle."""
+        bfield = None
+        for name in (
+            prefix + 'bfield',
+            prefix + '/bfield',
+            prefix + '/node_data[0]/values',
+            prefix + 'node_data[0]/values',
+        ):
             try:
-                self.jpar_bg = f.read('jpar_bg') # background current
-            except:
-                print('No jpar_bg in xgc.bfield.bp')
+                bfield = reader.read(name)
+                break
+            except Exception:
+                continue
+        if bfield is None:
+            raise KeyError("No bfield variable found in xgc.bfield.bp")
 
+        self.bfield = bfield
+        if self.bfield.shape[0] != 3:
+            self.bfield = np.transpose(self.bfield)
+            print('bfield shape is :', self.bfield.shape)
+
+        for name in (prefix + 'jpar_bg', prefix + '/jpar_bg'):
+            try:
+                self.jpar_bg = reader.read(name)
+                break
+            except Exception:
+                continue
+        else:
+            print('No jpar_bg in xgc.bfield.bp')
 
 
     def load_heatdiag(self, **kwargs):
