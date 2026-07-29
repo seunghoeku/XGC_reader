@@ -21,6 +21,55 @@ import xgc_reader
 x = xgc_reader.xgc1("/path/to/xgc")
 ```
 
+### XGC-Analysis backend
+
+The default backend keeps the historical ``xgc1`` API but uses the sibling
+[XGC-Analysis](https://github.com/PrincetonUniversity/XGC-Analysis) package for
+data access:
+
+```bash
+python -m pip install -e ~/Documents/git/XGC-Analysis
+```
+
+```python
+import xgc_reader
+
+x = xgc_reader.xgc1("/path/to/xgc")
+x.load_unitsm()
+x.setup_mesh()
+x.load_oned()
+x.setup_f0mesh()
+x.load_volumes()
+```
+
+Use ``backend="legacy"`` only when the original direct ADIOS2 readers are
+specifically required.
+
+``x.mesh``, ``x.f0``, ``x.vol``, and ``x.bfield`` expose references or NumPy
+views of arrays owned by XGC-Analysis wherever the legacy API allows it.
+Stacked 1-D diagnostic arrays and converted one-based surface indices are
+materialized once and cached.
+
+For new scripts, ``change_cwd=False`` avoids the historical process-wide
+directory change:
+
+```python
+x = xgc_reader.xgc1(
+    "/path/to/xgc",
+    backend="analysis",
+    change_cwd=False,
+)
+```
+
+The backend currently covers units/equilibrium aliases, mesh, 1-D diagnostics,
+f0 metadata, volume data, magnetic-field arrays, gradient/field-following
+matrices, and the legacy heatdiag2 species/derived-analysis interface. For
+backward compatibility,
+``load_heatdiag()`` reuses xgc_reader's existing direct reader for legacy
+``xgc.heatdiag.bp`` directory datasets; this legacy path is not available for
+ADIOS Campaign Archives. ``load_bfieldm()`` likewise keeps its small legacy
+reader and reuses the catalog's open campaign handle when applicable.
+
 ### Input modules
 
 ```python
@@ -51,6 +100,3 @@ These wrappers re-export the moved code and emit deprecation warnings. Existing 
 
 - `xgc_reader_old.py` remains unchanged for compatibility workflows.
 - `profile_input_reader.py` is still not ready; use `xgc_reader.input.profiles` instead.
-
-
-

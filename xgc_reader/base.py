@@ -14,7 +14,14 @@ from .volume_data import voldata
 from .flux_data import fluxavg, turbdata
 from .matrix_ops import (xgc_mat, grad_rz, ff_mapping, load_grad_rz, load_ff_mapping, 
                         convert_3d_grad_all, conv_real2ff, GradPlane, GradParX, write_dAs_ff_for_poincare)
-from .heat_diagnostics import datahlp, datahl2, datahl2_sp, load_heatdiag, load_heatdiag2
+from .heat_diagnostics import (
+    datahlp,
+    datahl2,
+    datahl2_sp,
+    load_heatdiag,
+    load_heatdiag2,
+    postprocess_heatdiag2,
+)
 from .field_data import databfm
 # others.py is now empty - functions moved to appropriate modules
 from .report import print_plasma_info, report_heatdiag2, report_profiles, report_turb_2d, turb_2d_report
@@ -32,34 +39,93 @@ class xgc1(object):
     # Import constants for backward compatibility
     cnst = cnst
 
-    def __init__(self, path='./'):
+    def __init__(
+        self,
+        path='./',
+        *,
+        backend='analysis',
+        change_cwd=True,
+        simulation=None,
+        catalog=None,
+    ):
         """
         Initialize either cd to a directory to process many files later, or
         open an Adios Campaign Archive now.
+
+        Parameters
+        ----------
+        path : str or os.PathLike, optional
+            XGC output directory or ``.aca`` campaign.
+        backend : {"legacy", "analysis"}, optional
+            Data-access implementation. ``"analysis"`` is the default and
+            uses XGC-Analysis through a compatibility facade. ``"legacy"``
+            preserves the existing direct ADIOS2 readers.
+        change_cwd : bool, optional
+            Preserve the historical behavior of changing into a directory
+            dataset. Set to False for new code that does not rely on relative
+            file reads.
+        simulation, catalog : object, optional
+            Pre-built XGC-Analysis objects, primarily for integration and
+            testing. They are only valid with ``backend="analysis"``.
         """
         # Check ADIOS2 version compatibility
         check_adios2_version()
 
-        if path.endswith(".aca"):
-            self.campaign = adios2.FileReader(path)
+        path = os.fspath(path)
+        if backend not in {"legacy", "analysis"}:
+            raise ValueError("backend must be either 'legacy' or 'analysis'")
+        if backend == "legacy" and (simulation is not None or catalog is not None):
+            raise ValueError(
+                "simulation and catalog are only valid with backend='analysis'"
+            )
+
+        self.backend = backend
+        self.change_cwd = change_cwd
+        self._analysis_backend = None
+        is_campaign = path.endswith(".aca")
+        location = os.path.abspath(path)
+
+        if backend == "analysis":
+            from .analysis_compat import create_analysis_backend
+
+            self.campaign = None
+            self.campaign_all_vars = {}
+            if is_campaign:
+                self.path = ''
+            else:
+                if change_cwd:
+                    os.chdir(location)
+                self.path = location.rstrip(os.sep) + os.sep
+            self._analysis_backend = create_analysis_backend(
+                location,
+                simulation=simulation,
+                catalog=catalog,
+            )
+            self.catalog = self._analysis_backend.catalog
+            self.simulation = self._analysis_backend.simulation
+        elif is_campaign:
+            self.campaign = adios2.FileReader(location)
             self.path = ''  # for self.path+filename to able to serve as name in campaign
             # get all variable names and info at once and save for reuse
             self.campaign_all_vars = self.campaign.available_variables()
         else:
             self.campaign = None
-            os.chdir(path)
-            self.path = os.getcwd() + '/'
+            if change_cwd:
+                os.chdir(location)
+            self.path = location.rstrip(os.sep) + os.sep
             self.campaign_all_vars = {}  # not usable when reading individual files locally
 
     def close(self):
-        """Close campaign if open."""
-        if self.campaign:
+        """Close resources held by the selected backend."""
+        if self._analysis_backend is not None:
+            self._analysis_backend.close()
+        elif self.campaign:
             self.campaign.close()
 
     @classmethod
-    def load_basic(cls, path='./'):
+    def load_basic(cls, path='./', **kwargs):
         """Load basic XGC data including units, 1D, mesh, and volumes."""
-        instance = cls(path)
+        instance = cls(path, **kwargs)
         instance.load_units()
         instance.load_oned()
         instance.setup_mesh()
@@ -69,6 +135,9 @@ class xgc1(object):
 
     def load_unitsm(self):
         """For compatibility with older version."""
+        if self._analysis_backend is not None:
+            self.load_units()
+            return
         try:
             self.load_units()
         except:
@@ -76,6 +145,21 @@ class xgc1(object):
 
     def load_units(self):
         """Read in xgc.units.bp file."""
+        if self._analysis_backend is not None:
+            self.unit_dic = self._analysis_backend.load_units()
+            self.psix = self.unit_dic['eq_x_psi']
+            self.eq_x_r = self.unit_dic['eq_x_r']
+            self.eq_x_z = self.unit_dic['eq_x_z']
+            self.eq_axis_r = self.unit_dic['eq_axis_r']
+            self.eq_axis_z = self.unit_dic['eq_axis_z']
+            self.eq_axis_b = self.unit_dic['eq_axis_b']
+            self.sml_wedge_n = self.unit_dic['sml_wedge_n']
+            for name in ('sml_dt', 'diag_1d_period'):
+                if name in self.unit_dic:
+                    setattr(self, name, self.unit_dic[name])
+            self._sync_analysis_objects()
+            return
+
         if self.campaign:
             f = self.campaign
             prefix = 'xgc.units.bp/'
@@ -139,6 +223,15 @@ class xgc1(object):
 
     def load_oned(self, i_mass=2, i2mass=12):
         """Load xgc.oneddiag.bp and some post process."""
+        if self._analysis_backend is not None:
+            self.od = self._analysis_backend.load_oned()
+            self.electron_on = self.od.electron_on
+            self.ion2_on = self.od.ion2_on
+            if getattr(self.od, 'psi00', None) is not None and hasattr(self, 'psix'):
+                self.od.psi00n = self.od.psi00 / self.psix
+            self._sync_analysis_objects()
+            return
+
         if self.campaign:
             self.od = data1(self.campaign, self.campaign_all_vars, "xgc.oneddiag.bp")
         else:
@@ -230,7 +323,10 @@ class xgc1(object):
 
     def setup_mesh(self):
         """Set up mesh data."""
-        if self.campaign:
+        if self._analysis_backend is not None:
+            self.mesh = self._analysis_backend.mesh_view()
+            self._sync_analysis_objects()
+        elif self.campaign:
             self.mesh = meshdata(self.campaign)
         else:
             self.mesh = meshdata(self.path)
@@ -244,29 +340,40 @@ class xgc1(object):
 
     def setup_f0mesh(self):
         """Set up f0 mesh data."""
-        if self.campaign:
+        if self._analysis_backend is not None:
+            self.f0 = self._analysis_backend.f0_view()
+            self._sync_analysis_objects()
+        elif self.campaign:
             self.f0 = f0meshdata(self.campaign)
         else:
             self.f0 = f0meshdata(self.path)
 
     def load_volumes(self):
         """Load volume data."""
-        if self.campaign:
+        if self._analysis_backend is not None:
+            self.vol = self._analysis_backend.volume_view()
+            self._sync_analysis_objects()
+        elif self.campaign:
             self.vol = voldata(self.campaign)
         else:
             self.vol = voldata(self.path)
 
-    def load_grad_rz(self):
-        """Load gradient R-Z data."""
-        self.grz = grad_rz(self)
-
-    def load_ff_mapping(self):
-        """Load field-following mapping."""
-        self.ffm = ff_mapping(self)
-
     def load_bfieldm(self):
-        """Load magnetic field midplane data."""
-        if self.campaign:
+        """Load magnetic field midplane data with the existing small reader."""
+        if self._analysis_backend is not None:
+            if self._analysis_backend.is_campaign:
+                catalog = self._analysis_backend.ensure_catalog()
+                campaign_reader = getattr(catalog, 'campaign_reader', None)
+                if campaign_reader is None:
+                    raise RuntimeError(
+                        "XGC-Analysis campaign catalog has no open reader for "
+                        "legacy xgc.bfieldm.bp access."
+                    )
+                self.bfm = databfm(campaign_reader)
+            else:
+                self.bfm = databfm(self.path)
+            self._sync_analysis_objects()
+        elif self.campaign:
             self.bfm = databfm(self.campaign)
         else:
             self.bfm = databfm(self.path)
@@ -278,6 +385,14 @@ class xgc1(object):
 
     def load_bfield(self):
         """Load equilibrium bfield data."""
+        if self._analysis_backend is not None:
+            self.bfield = self._analysis_backend.bfield_array()
+            magnetic = self._analysis_backend.ensure_simulation().magnetic_field
+            if hasattr(magnetic, 'jpar_bg_pd'):
+                self.jpar_bg = magnetic.jpar_bg_pd.get_data()
+            self._sync_analysis_objects()
+            return
+
         with adios2.FileReader(self.path + "xgc.bfield.bp") as f:
             try:
                 self.bfield = f.read('bfield')
@@ -296,12 +411,32 @@ class xgc1(object):
 
 
     def load_heatdiag(self, **kwargs):
-        """Load heat diagnostic data."""
+        """Load legacy heat diagnostic data with the existing direct reader."""
+        if (
+            self._analysis_backend is not None
+            and self._analysis_backend.is_campaign
+        ):
+            raise NotImplementedError(
+                "The legacy xgc.heatdiag.bp reader only supports directory "
+                "datasets, not ADIOS Campaign Archives."
+            )
         load_heatdiag(self, **kwargs)
 
     def load_heatdiag2(self):
         """Load heat diagnostic v2 data."""
+        if self._analysis_backend is not None:
+            self.hl2 = self._analysis_backend.load_heatdiag2()
+            postprocess_heatdiag2(self)
+            self._sync_analysis_objects()
+            return
         load_heatdiag2(self)
+
+    def _sync_analysis_objects(self):
+        """Expose lazily-created XGC-Analysis objects on the facade."""
+        if self._analysis_backend is None:
+            return
+        self.catalog = self._analysis_backend.catalog
+        self.simulation = self._analysis_backend.simulation
 
     def fsa_simple(self, var):
         """Simple flux surface average using mesh data."""
@@ -424,11 +559,19 @@ class xgc1(object):
     
     def load_grad_rz(self):
         """Load gradient R-Z matrices."""
+        if self._analysis_backend is not None:
+            self.grad = self._analysis_backend.gradient_view()
+            self._sync_analysis_objects()
+            return
         self.grad = load_grad_rz(self)
     
     def load_ff_mapping(self):
         """Load field-following mapping matrices."""
-        self.ff_mappings = load_ff_mapping(self)
+        if self._analysis_backend is not None:
+            self.ff_mappings = self._analysis_backend.field_following_views()
+            self._sync_analysis_objects()
+        else:
+            self.ff_mappings = load_ff_mapping(self)
         # Set individual mappings as attributes for backward compatibility
         for name, mapping in self.ff_mappings.items():
             setattr(self, 'ff_' + name, mapping)

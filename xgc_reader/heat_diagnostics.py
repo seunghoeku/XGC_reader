@@ -481,10 +481,13 @@ def load_heatdiag(xgc_instance, **kwargs):
 def load_heatdiag2(xgc_instance):
     """Load and process heat diagnostic v2 data."""
     xgc_instance.hl2 = datahl2(xgc_instance.path + "xgc.heatdiag2.bp", datahl2_sp)
-    
+    postprocess_heatdiag2(xgc_instance)
+
+
+def postprocess_heatdiag2(xgc_instance):
+    """Apply legacy heatdiag2 derived quantities to an already-loaded reader."""
     # Post process
     wedge_n = xgc_instance.unit_dic['sml_wedge_n']
-    it = -1  # keep the last one
     xgc_instance.hl2.psin = xgc_instance.hl2.psi / xgc_instance.psix
     
     # Area of each segment with angle factor
