@@ -89,6 +89,8 @@ class _OneDDiag:
         }
         self.get_array_calls = {}
         self.get_derived_array_calls = {}
+        self.mass_by_prefix = {"e": 0.0005, "i": 2.0, "i2": 12.0}
+        self.post_process_calls = 0
 
     def has_var(self, name):
         return name in self.data
@@ -112,6 +114,9 @@ class _OneDDiag:
     def get_time_mask(self):
         self.tmask = np.array([0, 1])
         return self.tmask
+
+    def post_process(self):
+        self.post_process_calls += 1
 
 
 class _HeatDiag:
@@ -561,6 +566,24 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertIs(captured["catalog"], catalog)
         self.assertNotIn("simulation", captured)
         self.assertIsNone(reader.simulation)
+
+    def test_facade_applies_explicit_oned_species_mass_overrides(self):
+        catalog = _Catalog()
+        source = _OneDDiag()
+        reader = xgc1(
+            "/fake/oned-only",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+        self.addCleanup(reader.close)
+        reader._analysis_backend._oned_factory = lambda **_kwargs: source
+
+        reader.load_oned(i_mass=3, i2mass=16)
+
+        self.assertEqual(source.mass_by_prefix["i"], 3)
+        self.assertEqual(source.mass_by_prefix["i2"], 16)
+        self.assertEqual(source.post_process_calls, 1)
 
     def test_facade_uses_legacy_static_readers_for_incomplete_old_run(self):
         catalog = _Catalog()

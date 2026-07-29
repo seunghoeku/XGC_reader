@@ -228,7 +228,14 @@ class xgc1(object):
     def load_oned(self, i_mass=2, i2mass=12):
         """Load xgc.oneddiag.bp and some post process."""
         if self._analysis_backend is not None:
-            self.od = self._analysis_backend.load_oned()
+            mass_overrides = {}
+            if i_mass != 2:
+                mass_overrides["i"] = i_mass
+            if i2mass != 12:
+                mass_overrides["i2"] = i2mass
+            self.od = self._analysis_backend.load_oned(
+                mass_overrides=mass_overrides,
+            )
             self.electron_on = self.od.electron_on
             self.ion2_on = self.od.ion2_on
             if getattr(self.od, 'psi00', None) is not None and hasattr(self, 'psix'):

@@ -645,7 +645,7 @@ class AnalysisBackend:
             views[name] = view
         return views
 
-    def load_oned(self):
+    def load_oned(self, *, mass_overrides=None):
         catalog = self.ensure_catalog()
         factory = self._oned_factory
         if factory is None:
@@ -657,6 +657,16 @@ class AnalysisBackend:
         if self.simulation is not None:
             kwargs["simulation"] = self.simulation
         oneddiag = factory(**kwargs)
+        if mass_overrides:
+            mass_by_prefix = getattr(oneddiag, "mass_by_prefix", None)
+            post_process = getattr(oneddiag, "post_process", None)
+            if mass_by_prefix is None or post_process is None:
+                raise TypeError(
+                    "OneDDiag implementation does not support species-mass "
+                    "overrides."
+                )
+            mass_by_prefix.update(mass_overrides)
+            post_process()
         return LegacyOneDView(oneddiag)
 
     def load_heatdiag2(self):
