@@ -357,6 +357,14 @@ class LegacyHeatDiagView(datahl2):
     """Legacy ``datahl2`` API over arrays owned by XGC-Analysis ``HeatDiag``."""
 
     _SPECIES_PREFIXES = ("e", "i", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9")
+    _TOP_LEVEL_SPECIES_ALIASES = {
+        "e_number": (0, "number"),
+        "e_para_energy": (0, "para_energy"),
+        "e_perp_energy": (0, "perp_energy"),
+        "i_number": (1, "number"),
+        "i_para_energy": (1, "para_energy"),
+        "i_perp_energy": (1, "perp_energy"),
+    }
 
     def __init__(self, heatdiag):
         self._heatdiag = heatdiag
@@ -438,6 +446,17 @@ class LegacyHeatDiagView(datahl2):
             species.g = number / dt / area
 
     def __getattr__(self, name):
+        alias = self._TOP_LEVEL_SPECIES_ALIASES.get(name)
+        if alias is not None:
+            species_index, field_name = alias
+            if species_index >= self.nsp:
+                raise AttributeError(name)
+            cache_key = f"compat:{name}"
+            if cache_key not in self._array_cache:
+                self._array_cache[cache_key] = np.squeeze(
+                    getattr(self.sp[species_index], field_name)
+                )
+            return self._array_cache[cache_key]
         if name in self._heatdiag.wall_data:
             return self._wall_array(name)
         if name in self._heatdiag.data:
@@ -642,6 +661,12 @@ class AnalysisBackend:
 
     def load_heatdiag2(self):
         sim = self.ensure_simulation()
+        product = getattr(sim.catalog, "products", {}).get("xgc.heatdiag2.bp")
+        if product is not None and not getattr(product, "variables", {}):
+            raise RuntimeError(
+                "Catalog product 'xgc.heatdiag2.bp' contains no readable "
+                "variables."
+            )
         factory = self._heatdiag_factory
         if factory is None:
             factory = self._get_api()["HeatDiag"]
@@ -662,6 +687,11 @@ class AnalysisBackend:
         if product is None:
             return None
         available = set(getattr(product, "variables", {}))
+        if not available:
+            raise RuntimeError(
+                "Catalog product 'xgc.heatdiag2.bp' contains no readable "
+                "variables."
+            )
         requested = set(getattr(heatdiag_type, "DEFAULT_VARS", ()))
         suffixes = ("_number", "_para_energy", "_perp_energy", "_potential")
         requested.update(

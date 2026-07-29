@@ -304,6 +304,15 @@ class CompatibilityViewTests(unittest.TestCase):
         self.assertEqual(view.sp[2].number.shape, (2, 1, 3))
         self.assertIs(view.sp[2].number, view.sp[2].number)
         self.assertEqual(source.get_array_calls["i2_number"], 1)
+        self.assertEqual(view.e_perp_energy.shape, (2, 3))
+        self.assertTrue(
+            np.shares_memory(
+                view.e_perp_energy,
+                source.arrays["e_perp_energy"],
+            )
+        )
+        self.assertIs(view.e_perp_energy, view.e_perp_energy)
+        self.assertEqual(view.i_para_energy.shape, (2, 3))
         np.testing.assert_array_equal(
             view.sp[2].number,
             source.arrays["i2_number"][..., 1:],
@@ -654,6 +663,23 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertTrue(hasattr(reader.hl2, "g_total"))
         self.assertTrue(np.shares_memory(reader.hl2.sp[0].number, source.arrays["e_number"]))
         self.assertEqual(reader.hl2.sp[0].q.shape, (2, 3))
+
+    def test_facade_rejects_empty_heatdiag2_product(self):
+        simulation, _plane, catalog = _make_simulation()
+        catalog.products["xgc.heatdiag2.bp"] = SimpleNamespace(variables={})
+        reader = xgc1(
+            ".",
+            backend="analysis",
+            change_cwd=False,
+            simulation=simulation,
+        )
+        self.addCleanup(reader.close)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "contains no readable variables",
+        ):
+            reader.load_heatdiag2()
 
     def test_facade_legacy_heatdiag_uses_existing_reader(self):
         simulation, _plane, _catalog = _make_simulation()
