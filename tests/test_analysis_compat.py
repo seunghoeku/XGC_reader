@@ -338,6 +338,51 @@ class CompatibilityViewTests(unittest.TestCase):
 
 
 class AnalysisBackendFacadeTests(unittest.TestCase):
+    def test_directory_catalog_collects_only_wrapper_products_without_tracking(self):
+        calls = []
+        catalog = _Catalog()
+
+        class _SimulationType:
+            STATIC_BUFFER_REQUESTS = {
+                "xgc.mesh.bp": ("rz",),
+                "xgc.f0.mesh.bp": ("f0_T_ev",),
+            }
+            REQUIRED_CATALOG_PRODUCTS = (
+                "xgc.mesh.bp",
+                "xgc.equil.bp",
+                "xgc.bfield.bp",
+            )
+
+        def open_catalog(location, **kwargs):
+            calls.append((location, kwargs))
+            return catalog
+
+        backend = AnalysisBackend(
+            "/fake/run",
+            api={
+                "Simulation": _SimulationType,
+                "open_catalog": open_catalog,
+            },
+        )
+
+        self.assertIs(backend.ensure_catalog(), catalog)
+        self.assertEqual(len(calls), 1)
+        location, kwargs = calls[0]
+        self.assertEqual(str(location), "/fake/run")
+        self.assertFalse(kwargs["track_state"])
+        self.assertEqual(
+            kwargs["metadata_product_keys"],
+            {
+                "xgc.mesh.bp",
+                "xgc.f0.mesh.bp",
+                "xgc.equil.bp",
+                "xgc.bfield.bp",
+                "xgc.units.bp",
+                "xgc.oneddiag.bp",
+                "xgc.heatdiag2.bp",
+            },
+        )
+
     def test_analysis_is_the_default_backend(self):
         simulation, _plane, _catalog = _make_simulation()
         reader = xgc1(
@@ -566,6 +611,22 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
         self.assertIs(captured["catalog"], catalog)
         self.assertNotIn("simulation", captured)
         self.assertIsNone(reader.simulation)
+
+    def test_facade_rejects_empty_oned_product(self):
+        catalog = _Catalog()
+        catalog.products["xgc.oneddiag.bp"] = SimpleNamespace(variables={})
+        reader = xgc1(
+            "/fake/run",
+            backend="analysis",
+            change_cwd=False,
+            catalog=catalog,
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "xgc.oneddiag.bp.*no readable variables",
+        ):
+            reader.load_oned()
 
     def test_facade_applies_explicit_oned_species_mass_overrides(self):
         catalog = _Catalog()

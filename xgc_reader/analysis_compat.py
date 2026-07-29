@@ -27,6 +27,13 @@ class AnalysisBackendUnavailable(ImportError):
     """Raised when the optional XGC-Analysis backend is not installed."""
 
 
+_DIAGNOSTIC_METADATA_PRODUCTS = {
+    "xgc.units.bp",
+    "xgc.oneddiag.bp",
+    "xgc.heatdiag2.bp",
+}
+
+
 def _import_analysis_api():
     """Import the XGC-Analysis entry points needed by the compatibility layer."""
     try:
@@ -499,7 +506,21 @@ class AnalysisBackend:
             if self.is_campaign:
                 self.catalog = api["open_campaign_catalog"](self.location)
             else:
-                self.catalog = api["open_catalog"](self.location)
+                simulation_type = api["Simulation"]
+                metadata_product_keys = set(
+                    simulation_type.STATIC_BUFFER_REQUESTS
+                )
+                metadata_product_keys.update(
+                    simulation_type.REQUIRED_CATALOG_PRODUCTS
+                )
+                metadata_product_keys.update(
+                    _DIAGNOSTIC_METADATA_PRODUCTS
+                )
+                self.catalog = api["open_catalog"](
+                    self.location,
+                    metadata_product_keys=metadata_product_keys,
+                    track_state=False,
+                )
         return self.catalog
 
     def ensure_simulation(self):
@@ -647,6 +668,12 @@ class AnalysisBackend:
 
     def load_oned(self, *, mass_overrides=None):
         catalog = self.ensure_catalog()
+        product = getattr(catalog, "products", {}).get("xgc.oneddiag.bp")
+        if product is not None and not getattr(product, "variables", {}):
+            raise RuntimeError(
+                "Catalog product 'xgc.oneddiag.bp' contains no readable "
+                "variables."
+            )
         factory = self._oned_factory
         if factory is None:
             factory = self._get_api()["OneDDiag"]
