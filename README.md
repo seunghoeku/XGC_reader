@@ -50,6 +50,19 @@ views of arrays owned by XGC-Analysis wherever the legacy API allows it.
 Stacked 1-D diagnostic arrays and converted one-based surface indices are
 materialized once and cached.
 
+OneD step names are normalized for older notebooks:
+
+```python
+x.load_oned()
+steps = x.od.step
+```
+
+When the diagnostic contains ``gstep``, both ``x.od.step`` and
+``x.od.gstep`` reference that array. If ``gstep`` is absent, both names
+reference the legacy ``step`` array. No additional step array is created.
+A single BP file that changes from ``step`` to ``gstep`` partway through a
+run is not merged automatically; treat the segments as separate simulations.
+
 For new scripts, ``change_cwd=False`` avoids the historical process-wide
 directory change:
 
@@ -78,6 +91,13 @@ products. Heatdiag2 data can likewise be read from its catalog product without
 constructing a full ``Simulation``. If the catalog lacks the products required
 to construct a ``Simulation``, the compatibility facade uses the existing
 static mesh, f0, volume, and bfield readers for that old dataset only.
+
+Some older ``input`` files refer to initial density, temperature, or flow
+profiles outside the simulation directory. If those files are not catalog
+text artifacts, XGC-Analysis emits a warning and omits only the unavailable
+entry from ``Species.initial_profiles``. Mesh and diagnostic initialization
+continues. Copy or register the profile files in the catalog when analysis of
+the initial profiles themselves is required.
 
 ### Input modules
 
