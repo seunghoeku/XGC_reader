@@ -39,6 +39,7 @@ def _import_analysis_api():
     try:
         from xgc_analysis.catalog import (
             build_static_buffer,
+            discover_directory_products,
             open_campaign_catalog,
             open_catalog,
             read_static_variables,
@@ -62,6 +63,7 @@ def _import_analysis_api():
         "OneDDiag": OneDDiag,
         "HeatDiag": HeatDiag,
         "build_static_buffer": build_static_buffer,
+        "discover_directory_products": discover_directory_products,
         "open_catalog": open_catalog,
         "open_campaign_catalog": open_campaign_catalog,
         "read_static_variables": read_static_variables,
@@ -529,19 +531,28 @@ class AnalysisBackend:
                 self.catalog = api["open_campaign_catalog"](self.location)
             else:
                 simulation_type = api["Simulation"]
-                metadata_product_keys = set(
+                included_products = set(
                     simulation_type.STATIC_BUFFER_REQUESTS
                 )
-                metadata_product_keys.update(
+                included_products.update(
                     simulation_type.REQUIRED_CATALOG_PRODUCTS
                 )
-                metadata_product_keys.update(
+                included_products.update(
                     _DIAGNOSTIC_METADATA_PRODUCTS
                 )
+                discovered_products = api["discover_directory_products"](
+                    Path(self.location),
+                    collect_metadata=False,
+                )
+                excluded_products = {
+                    product.key
+                    for product in discovered_products
+                    if product.key not in included_products
+                }
                 self.catalog = api["open_catalog"](
                     self.location,
-                    metadata_product_keys=metadata_product_keys,
-                    track_state=False,
+                    exclude_products=excluded_products,
+                    build_manifest=False,
                 )
         return self.catalog
 

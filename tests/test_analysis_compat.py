@@ -1,5 +1,6 @@
 """Tests for the reference-based XGC-Analysis compatibility facade."""
 
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import mock_open, patch
@@ -352,8 +353,9 @@ class CompatibilityViewTests(unittest.TestCase):
 
 
 class AnalysisBackendFacadeTests(unittest.TestCase):
-    def test_directory_catalog_collects_only_wrapper_products_without_tracking(self):
+    def test_directory_catalog_excludes_products_unused_by_wrapper(self):
         calls = []
+        discovery_calls = []
         catalog = _Catalog()
 
         class _SimulationType:
@@ -367,6 +369,20 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
                 "xgc.bfield.bp",
             )
 
+        def discover_directory_products(location, **kwargs):
+            discovery_calls.append((location, kwargs))
+            return [
+                SimpleNamespace(key="xgc.mesh.bp"),
+                SimpleNamespace(key="xgc.f0.mesh.bp"),
+                SimpleNamespace(key="xgc.equil.bp"),
+                SimpleNamespace(key="xgc.bfield.bp"),
+                SimpleNamespace(key="xgc.units.bp"),
+                SimpleNamespace(key="xgc.oneddiag.bp"),
+                SimpleNamespace(key="xgc.heatdiag2.bp"),
+                SimpleNamespace(key="xgc.3d.bp"),
+                SimpleNamespace(key="xgc.f3d.bp"),
+            ]
+
         def open_catalog(location, **kwargs):
             calls.append((location, kwargs))
             return catalog
@@ -375,25 +391,25 @@ class AnalysisBackendFacadeTests(unittest.TestCase):
             "/fake/run",
             api={
                 "Simulation": _SimulationType,
+                "discover_directory_products": discover_directory_products,
                 "open_catalog": open_catalog,
             },
         )
 
         self.assertIs(backend.ensure_catalog(), catalog)
+        self.assertEqual(
+            discovery_calls,
+            [(Path("/fake/run"), {"collect_metadata": False})],
+        )
         self.assertEqual(len(calls), 1)
         location, kwargs = calls[0]
         self.assertEqual(str(location), "/fake/run")
-        self.assertFalse(kwargs["track_state"])
+        self.assertFalse(kwargs["build_manifest"])
         self.assertEqual(
-            kwargs["metadata_product_keys"],
+            kwargs["exclude_products"],
             {
-                "xgc.mesh.bp",
-                "xgc.f0.mesh.bp",
-                "xgc.equil.bp",
-                "xgc.bfield.bp",
-                "xgc.units.bp",
-                "xgc.oneddiag.bp",
-                "xgc.heatdiag2.bp",
+                "xgc.3d.bp",
+                "xgc.f3d.bp",
             },
         )
 

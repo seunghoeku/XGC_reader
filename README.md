@@ -99,6 +99,12 @@ entry from ``Species.initial_profiles``. Mesh and diagnostic initialization
 continues. Copy or register the profile files in the catalog when analysis of
 the initial profiles themselves is required.
 
+For directory-backed runs, this compatibility layer uses the fast catalog API
+introduced by XGC-Analysis PR #51. It first inventories top-level BP product
+names without opening ADIOS metadata, excludes products that the wrapper does
+not use, and opens the selected catalog with ``build_manifest=False``. Campaign
+catalog behavior is unchanged.
+
 ### Input modules
 
 ```python
