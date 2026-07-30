@@ -306,6 +306,20 @@ class CompatibilityViewTests(unittest.TestCase):
         self.assertTrue(view.electron_on)
         self.assertTrue(view.ion2_on)
 
+    def test_oned_step_alias_prefers_gstep_for_old_scripts(self):
+        gstep = np.array([10, 20])
+        view = LegacyOneDView(SimpleNamespace(gstep=gstep))
+
+        self.assertIs(view.step, gstep)
+        self.assertIs(view.gstep, gstep)
+
+    def test_oned_step_alias_falls_back_to_legacy_step(self):
+        step = np.array([10, 20])
+        view = LegacyOneDView(SimpleNamespace(step=step))
+
+        self.assertIs(view.step, step)
+        self.assertIs(view.gstep, step)
+
     def test_heatdiag2_view_reuses_species_arrays_and_removes_garbage_bin(self):
         source = _HeatDiag()
         view = LegacyHeatDiagView(source)

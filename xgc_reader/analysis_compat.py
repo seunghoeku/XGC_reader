@@ -266,6 +266,28 @@ class LegacyOneDView:
     def ion2_on(self):
         return "i2" in self._oneddiag.active_species_prefixes
 
+    def _step_values(self):
+        """Prefer modern ``gstep`` and fall back to the legacy ``step`` name."""
+        try:
+            return self._oneddiag.gstep
+        except AttributeError:
+            try:
+                return self._oneddiag.step
+            except AttributeError as exc:
+                raise AttributeError(
+                    "OneD diagnostic contains neither 'gstep' nor 'step'."
+                ) from exc
+
+    @property
+    def step(self):
+        """Expose the selected global-step series under the legacy name."""
+        return self._step_values()
+
+    @property
+    def gstep(self):
+        """Expose the selected global-step series under the modern name."""
+        return self._step_values()
+
     def _standard_name(self, legacy_name: str):
         # Historical XGC output commonly uses ``i2gc_density...`` without an
         # underscore, while XGC-Analysis exposes ``i2.gc_density...``.
@@ -324,7 +346,7 @@ class LegacyOneDView:
             except AttributeError:
                 return self._oneddiag.get_time_mask()
 
-        if name in {"psi", "psi00", "time", "step", "gstep"}:
+        if name in {"psi", "psi00", "time"}:
             return getattr(self._oneddiag, name)
 
         standard_name = self._standard_name(name)
