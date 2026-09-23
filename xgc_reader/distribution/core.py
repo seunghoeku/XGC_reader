@@ -413,30 +413,36 @@ class XGCDistribution:
 
     # setup canonical maxwellian
     # correction is to correct the psi_c value for being close to psi
+    # psi_c = psi + (m/q) R v_para B_phi/B assumes sml_bp_sign=+1 (XGC diagnosis.F90).
     def canonical_maxwellian(self, xr, psi_den, den_c, psi_temp, temp_ev_c, correction):
         fcm = np.zeros((self.nnodes, self.vgrid.nvperp, self.vgrid.nvpdata))
 
         bmag = np.sqrt(xr.bfield[0,:]**2 + xr.bfield[1,:]**2 + xr.bfield[2,:]**2)
-        q_m = self.E_CHARGE/self.mass
+        q_m = self.charge/self.mass
         m_q = 1/q_m
+        # the correction removes the axis value of the v_para term of psi_c,
+        # so it must carry the same B_phi sign (sml_bt_sign=-1 flips it)
+        bphi_sign = np.sign(xr.bfield[2,:])
+        v_n = np.sqrt(self.fg_temp_ev*self.E_CHARGE/self.mass)
         #actual calculation
         for i in range(self.vgrid.nvperp):
+            # mimic `vgrid.inv_mu0_factor = 1/3` correction for ivr==0, as in remove_maxwellian
+            vperp_jac = self.vgrid.vperp[i] if i > 0 else self.vgrid.dvperp/3.
             for j in range(self.vgrid.nvpdata):
-                v_n = np.sqrt(self.fg_temp_ev*q_m)
                 vpara = self.vgrid.vpara[j]*v_n # no flow
                 vperp = self.vgrid.vperp[i]*v_n
-                en =0.5* self.mass * (vpara**2 + vperp**2) 
+                en =0.5* self.mass * (vpara**2 + vperp**2)
                 psi_c = xr.mesh.psi + m_q * xr.mesh.r * xr.bfield[2,:]/bmag * vpara
                 mu = 0.5 * self.mass * vperp**2 / bmag
                 if(correction):
                     h = en - mu * xr.eq_axis_b
                     h = np.maximum(h,0.0) # hevyside function multiplied.
-                    psi_c = psi_c - np.sign(vpara)* m_q * xr.eq_axis_r * np.sqrt(2*h/self.mass)
-                
+                    psi_c = psi_c - bphi_sign * np.sign(vpara)* m_q * xr.eq_axis_r * np.sqrt(2*h/self.mass)
+
                 den = np.interp(psi_c, psi_den, den_c)
                 temp_ev = np.interp(psi_c, psi_temp, temp_ev_c)
                 en = en/ (temp_ev*self.EV_TO_JOULE) # normalized energy by T
-                fcm[:,i,j] = den * np.exp(-en) / (temp_ev)**1.5 * self.vgrid.vperp[i]  * np.sqrt(self.fg_temp_ev)
+                fcm[:,i,j] = den * np.exp(-en) / (temp_ev)**1.5 * vperp_jac * np.sqrt(self.fg_temp_ev)
         return fcm
 
     # resize the distribution function with new # of nodes.
@@ -457,7 +463,10 @@ class XGCDistribution:
     def set_canonical_maxwellian_iterative(self, xr, psi_den, den_target_in, psi_temp, temp_ev_target_in, correction=True, tol=1e-2, max_iter=30, show_fig=False):
 
         # interpolate the target moments to oned psi 
-        psi = xr.od.psi*xr.psix
+        psi = np.asarray(xr.od.psi)
+        if psi.ndim > 1: # oneddiag arrays are (nstep, npsi); the grid is fixed
+            psi = psi[0]
+        psi = psi*xr.psix
         den_target=np.interp(psi, psi_den, den_target_in)
         temp_ev_target=np.interp(psi, psi_temp, temp_ev_target_in)
 
