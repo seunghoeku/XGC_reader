@@ -5,6 +5,11 @@ from .core import (
     XGCDistribution,
     convert_distribution,
     poloidal_smooth_f_init,
+    set_sol_maxwellian,
+    sol_weight,
+    split_open_surface,
+    open_segment_weights,
+    smooth_open_segment,
     vspace_smooth,
 )
 from .canonical import (
@@ -22,6 +27,11 @@ __all__ = [
     "XGCDistribution",
     "convert_distribution",
     "poloidal_smooth_f_init",
+    "set_sol_maxwellian",
+    "sol_weight",
+    "split_open_surface",
+    "open_segment_weights",
+    "smooth_open_segment",
     "vspace_smooth",
     "canonical_coordinates",
     "distribution_without_perp_jacobian",

@@ -795,43 +795,148 @@ def create_tanh_envelope(vgrid, v_cutoff=2.0, transition_width=0.5):
     
     return envelope
 
-def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
+def split_open_surface(indices, x, jump_factor=3.0):
+    """Contiguous pieces of one stored open flux surface.
+
+    XGC keeps every node of one ``psi_surf`` value in one ``surf_idx`` row even
+    when the wall cuts that line into several open pieces: far-SOL rows that a
+    limiter splits in two, and the two separatrix legs below the X-point, which
+    sit back to back in the separatrix row. Consecutive nodes farther apart
+    than ``jump_factor`` times the median node spacing start a new piece, so a
+    smoothing kernel never averages across a gap that is really the wall.
+    """
+    indices = np.asarray(indices)
+    if indices.size < 3:
+        return [indices]
+    dd = np.hypot(np.diff(x.mesh.r[indices]), np.diff(x.mesh.z[indices]))
+    med = np.median(dd)
+    if not med > 0:
+        return [indices]
+    cuts = np.where(dd > jump_factor * med)[0] + 1
+    return [seg for seg in np.split(indices, cuts) if seg.size > 0]
+
+
+def open_segment_weights(s, sigma_s, edge_sigmas=3.0):
+    """Row-stochastic smoothing matrix for one open piece of a flux surface.
+
+    Parameters
+    ----------
+    s : (n,) arc length of the nodes along the piece [m], in surf_idx order.
+    sigma_s : scalar or (n,) Gaussian width per node [m].
+    edge_sigmas : the kernel is shrunk near the ends so that ``edge_sigmas``
+        widths fit between the node and the nearest end.
+
+    The Gaussian is evaluated only on the nodes of the piece (no padding
+    beyond the ends) and renormalised, and its width at node k is
+    ``min(sigma_s[k], d_end[k] / edge_sigmas)`` with ``d_end`` the arc distance
+    to the nearer end. The two end nodes are therefore returned unchanged, and
+    a node is never averaged with the padded copy of a wall-side value, which
+    is what ``scipy.ndimage.convolve1d(mode="nearest")`` does: on open field
+    lines the ends are the divertor plates, where the sheath makes f strongly
+    non-Maxwellian, and padding carries that structure back up the leg over a
+    kernel width. Weights are multiplied by the local node spacing so uneven
+    spacing does not bias the average.
+    """
+    s = np.asarray(s, dtype=float)
+    n = s.size
+    if n < 2:
+        return np.eye(n)
+    d_end = np.minimum(s - s[0], s[-1] - s)
+    sig = np.minimum(np.broadcast_to(np.asarray(sigma_s, dtype=float), (n,)), d_end / edge_sigmas)
+    ds = np.gradient(s)
+    W = np.eye(n)
+    active = sig > 0
+    if active.any():
+        diff = s[None, :] - s[active, None]
+        w = np.exp(-0.5 * (diff / sig[active, None]) ** 2) * ds[None, :]
+        W[active] = w / w.sum(axis=1, keepdims=True)
+    return W
+
+
+def smooth_open_segment(f, indices, x, sigma_theta, edge_sigmas=3.0):
+    """Smooth ``f[indices]`` (any trailing shape) in place along one open piece.
+
+    The width in metres is ``sigma_theta`` times the node's distance from the
+    magnetic axis, so ``sigma_theta`` keeps its meaning of a poloidal angle on
+    open field lines of any length -- the index-based kernel of the closed
+    surfaces assumes a row that spans 2 pi, which a SOL piece between two
+    plates, or a private-region arc, does not.
+    """
+    indices = np.asarray(indices)
+    n = indices.size
+    if n < 2:
+        return
+    r, z = x.mesh.r[indices], x.mesh.z[indices]
+    s = np.concatenate([[0.0], np.cumsum(np.hypot(np.diff(r), np.diff(z)))])
+    sigma_s = sigma_theta * np.hypot(r - x.eq_axis_r, z - x.eq_axis_z)
+    W = open_segment_weights(s, sigma_s, edge_sigmas)
+    block = f[indices]
+    f[indices] = (W @ block.reshape(n, -1)).reshape(block.shape)
+
+
+def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False,
+                           open_mode="shrink", edge_sigmas=3.0, jump_factor=3.0):
     """
     Apply poloidal smoothing to dist.f_g using a Gaussian filter along each flux surface.
-    
-    Parameters:
+
+    Parameters
     dist : XGCDistribution-like object with f_g property to be smoothed.
     x    : geometry/mesh container with mesh.surf_len and mesh.surf_idx, and mesh.node_vol.
     sigma_theta : float
         Width of Gaussian filter in radians.
     conserv_norm : bool
         If True, the normalization is conserved.
+    open_mode : "shrink" | "legacy"
+        How open field lines (SOL, private region, separatrix legs) are
+        smoothed. "shrink" (default) splits each stored row into its
+        contiguous pieces and uses `smooth_open_segment`: a kernel in arc
+        length, truncated at the ends and shrunk so the end nodes are left
+        alone. "legacy" is the pre-2026-10 behaviour -- the closed-surface
+        index kernel with scipy's "nearest" padding, which copies the
+        plate-side value beyond the ends and smooths the two separatrix legs
+        as one array -- kept for comparisons.
+    edge_sigmas, jump_factor : see `open_segment_weights`, `split_open_surface`.
+    Closed surfaces are untouched by these options and reproduce earlier files.
     Returns:
     --------
     dist : XGCDistribution-like object with f_g property smoothed.
-    
+
     Example usage (uncomment to use):
     poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False)
     """
     import scipy.ndimage
 
+    if open_mode not in ("shrink", "legacy"):
+        raise ValueError(f"open_mode must be 'shrink' or 'legacy', got {open_mode!r}")
+
     n_surf = x.mesh.surf_len.size
     isep = np.argmin(abs(x.mesh.psi_surf - x.psix))
     sigma_n_min = 10
-    for i in range(n_surf):
-        surf_len = x.mesh.surf_len[i]
-        if surf_len == 0:
-            continue
 
+    def index_kernel(surf_len):
         # Calculate gaussian width in index space for the surface
         if surf_len < sigma_n_min:
             sigma_n = surf_len
         else:
             sigma_n = max(surf_len * sigma_theta / (2 * np.pi), sigma_n_min)
-
         n = np.arange(surf_len)
         gauss = np.exp(-(n - surf_len / 2) ** 2 / (2 * sigma_n ** 2))
-        gauss = gauss / np.sum(gauss)
+        return gauss / np.sum(gauss)
+
+    def smooth_open(indices):
+        if open_mode == "legacy":
+            gauss = index_kernel(indices.size) if indices.size else None
+            if gauss is not None:
+                dist.f_g[indices, :, :] = scipy.ndimage.convolve1d(
+                    dist.f_g[indices, :, :], gauss, axis=0, mode="nearest")
+            return
+        for seg in split_open_surface(indices, x, jump_factor):
+            smooth_open_segment(dist.f_g, seg, x, sigma_theta, edge_sigmas)
+
+    for i in range(n_surf):
+        surf_len = x.mesh.surf_len[i]
+        if surf_len == 0:
+            continue
 
         # Get poloidal surface indices; convert to 0-based index
         indices = x.mesh.surf_idx[i, :surf_len] - 1
@@ -840,26 +945,30 @@ def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
             msk_above_xpt = x.mesh.z[indices] >= x.eq_x_z
             msk_below_xpt = x.mesh.z[indices] < x.eq_x_z
 
-            # above X-pt
+            # above X-pt: one loop that closes at the X-point
+            gauss = index_kernel(surf_len)
             fg_slice = dist.f_g[indices[msk_above_xpt], :, :]
             fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="wrap")
             dist.f_g[indices[msk_above_xpt], :, :] = fg_smoothed
 
-            # below X-pt
-            fg_slice = dist.f_g[indices[msk_below_xpt], :, :]
-            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="nearest")
-            dist.f_g[indices[msk_below_xpt], :, :] = fg_smoothed
+            # below X-pt: the two divertor legs, open pieces
+            if open_mode == "legacy":
+                fg_slice = dist.f_g[indices[msk_below_xpt], :, :]
+                fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="nearest")
+                dist.f_g[indices[msk_below_xpt], :, :] = fg_smoothed
+            else:
+                smooth_open(indices[msk_below_xpt])
+
+        elif i < isep:
+            # closed surface: periodic index kernel (unchanged)
+            gauss = index_kernel(surf_len)
+            fg_slice = dist.f_g[indices, :, :]
+            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode="wrap")
+            dist.f_g[indices, :, :] = fg_smoothed
 
         else:
-            if i < isep:
-                mode_convolve = "wrap"
-            else: # for open field lines
-                mode_convolve = "nearest"
-
-            # Extract the slice to smooth
-            fg_slice = dist.f_g[indices, :, :]
-            fg_smoothed = scipy.ndimage.convolve1d(fg_slice, gauss, axis=0, mode=mode_convolve)
-            dist.f_g[indices, :, :] = fg_smoothed
+            # open field lines (SOL, private region)
+            smooth_open(indices)
 
         # Normalize to keep total (summed) f_g over these points unchanged
         if(conserv_norm):
@@ -867,11 +976,56 @@ def poloidal_smooth_f_init(dist, x, sigma_theta=2, conserv_norm=False):
             if norm != 0:
                 dist.f_g[indices, :, :] = dist.f_g[indices, :, :] / norm
 
-        # Example of further vectorized access if needed:
-        var_vals = dist.f_g[indices, :, :]
-        vol_vals = x.mesh.node_vol[indices]    
 
-    
+def sol_weight(x, taper_psin=0.02, private=True, wall=True):
+    """Per-node factor that turns the open-field-line part of an f_init Maxwellian.
+
+    1 on closed flux surfaces (region 1); on open field lines (region 2) a
+    half-cosine from 1 at the separatrix to 0 at psi_N = 1 + taper_psin and 0
+    beyond (a step at the separatrix when taper_psin == 0); 0 in the private
+    region (3) and on wall nodes (100) unless ``private`` / ``wall`` are False.
+    Requires ``region`` in xgc.mesh.bp.
+    """
+    if not hasattr(x.mesh, "region"):
+        raise AttributeError("sol_weight needs mesh.region (xgc.mesh.bp without 'region')")
+    psin = x.mesh.psi / x.psix
+    rgn = np.asarray(x.mesh.region)
+    w = np.ones(psin.size)
+    sol = rgn == 2
+    if taper_psin > 0:
+        t = np.clip((psin[sol] - 1.0) / taper_psin, 0.0, 1.0)
+        w[sol] = 0.5 * (1.0 + np.cos(np.pi * t))
+    else:
+        w[sol] = 0.0
+    if private:
+        w[rgn == 3] = 0.0
+    if wall:
+        w[rgn >= 100] = 0.0
+    return w
+
+
+def set_sol_maxwellian(dist, x, taper_psin=0.02, private=True, wall=True):
+    """Start the SOL from its Maxwellian: ``f_g <- sol_weight(...) * f_g``.
+
+    The f_init file stores f - f_M with f_M built from the ``density`` /
+    ``temperature`` / ``flow`` arrays, so zeroing f_g on open field lines makes
+    XGC initialise them exactly as a Maxwellian start would. Why that is the
+    default for the SOL: a stage-A XGCa run of a few tenths of a millisecond
+    has not relaxed the open field lines (one parallel transit to the plates),
+    the density check and `adjust` never score them, and any sheath or
+    recycling structure in f0 there re-forms within a transit time of the
+    turbulence run anyway; a noisy or half-relaxed SOL f_g only adds charge
+    error. The taper keeps f_g continuous across the separatrix so the
+    neoclassical state just inside it (E_r well, trapped-particle asymmetry)
+    is not cut by a step. Returns the weight array.
+    """
+    if dist.has_maxwellian:
+        dist.remove_maxwellian()
+    w = sol_weight(x, taper_psin=taper_psin, private=private, wall=wall)
+    dist.f_g *= w[:, None, None]
+    return w
+
+
 def vspace_smooth(dist, width=1):
     """
     Smooth the distribution function in velocity space using 
