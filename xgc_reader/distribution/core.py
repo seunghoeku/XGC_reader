@@ -151,7 +151,9 @@ class XGCDistribution:
             it=time_step
             ftmp=file.read(var_string) #,start=[],count=[],step_start=it, step_count=1)
             print('Reading data with shape:',np.shape(ftmp))
-            step=file.read('step') #,start=[],count=[],step_start=it, step_count=1)
+            # XGC master since late 2026 writes 'gstep' instead of 'step' in xgc.f0.*.bp.
+            step_name = 'step' if 'step' in file.available_variables() else 'gstep'
+            step=file.read(step_name) #,start=[],count=[],step_start=it, step_count=1)
             ftmp = np.squeeze(ftmp) # remove time step dimension
             if(ftmp.ndim == 4):
                 ftmp = np.mean(ftmp,axis=0) # toroidal average
